@@ -25,41 +25,30 @@ description = alert_json['rule']['description'] if 'description' in alert_json['
 agent = alert_json['agent']['name'] if 'name' in alert_json['agent'] else "N/A"
 rule_id = alert_json['rule']['id'] if 'id' in alert_json['rule'] else "N/A"
 
-# Function to load and fill template
 def load_and_fill_template(template_path, data):
     with open(template_path, 'r') as template_file:
-        template = template_file.read()
-    return template.format(**data)
+        template_json = json.load(template_file)
+    template = template_json['template']
+    fields = template_json['fields']
+    
+    # Populate data dynamically
+    populated_data = {key: eval(value) for key, value in fields.items()}
+    
+    return template.format(**populated_data)
 
 # Define a function to get message data based on rule_id
 def get_message_data(rule_id, alert_json):
-    if rule_id == "60122":
-        data = {
-            'description': alert_json['rule']['description'],
-            'alert_level': alert_json['rule']['level'],
-            'agent': alert_json['agent']['name'],
-            'timestamp': alert_json['timestamp'],
-            'event_id': alert_json['data']['win']['system']['eventID'],
-            'provider_name': alert_json['data']['win']['system']['providerName'],
-            'logon_type': alert_json['data']['win']['eventdata']['logonType'],
-            'ip_address': alert_json['data']['win']['eventdata']['ipAddress'],
-            'failure_reason': alert_json['data']['win']['eventdata']['failureReason'],
-            'mitre_tactics': ', '.join(alert_json['rule']['mitre']['tactic']),
-            'mitre_techniques': ', '.join(alert_json['rule']['mitre']['technique']),
-            'location': alert_json['location']
-        }
-        template_path = '/var/ossec/integrations/templates/60122.txt'
-        message = load_and_fill_template(template_path, data)
-        return {
-            'chat_id': CHAT_ID,
-            'text': message
-        }
-    # Add more rule_id cases here
-    else:
-        return {
-            'chat_id': CHAT_ID,
-            'text': f"Description: {description}\nAlert Level: {alert_level}\nAgent: {agent}"
-        }
+    template_path = f'/var/ossec/integrations/templates/{rule_id}.json'
+    try:
+        message = load_and_fill_template(template_path, alert_json)
+    except FileNotFoundError:
+        # Fallback to default template
+        message = load_and_fill_template('/var/ossec/integrations/templates/default.json', alert_json)
+    return {
+        'chat_id': CHAT_ID,
+        'text': message
+    }
+
 
 # Get message data based on rule_id
 msg_data = get_message_data(rule_id, alert_json)
