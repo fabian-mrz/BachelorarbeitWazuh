@@ -6,17 +6,22 @@ import csv
 import time
 import requests
 import configparser
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Read configuration from config.ini
 config = configparser.ConfigParser()
 config.read('/var/ossec/integrations/config.ini')
 
 CHAT_ID = config['telegram']['CHAT_ID']
-HOOK_URL = config['telegram']['HOOK_URL']
+BOT_TOKEN = config['telegram']['BOT_TOKEN']
+HOOK_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
 
 EVENTS_DIR = '/var/ossec/integrations/events'
 DEFAULT_TEMPLATE_PATH = '/var/ossec/integrations/templates/default.json'
-CSV_FILE_PATH = '/var/ossec/integrations/aggregated_events.csv'
+CSV_FILE_PATH_TEMPLATE = '/var/ossec/integrations/{rule_id}_aggregated_events.csv'
 
 def parse_events():
     aggregated_events = []
@@ -51,45 +56,73 @@ def save_to_csv(events):
     if not events:
         return
     
-    # Determine fields dynamically based on the first event's rule_id
-    first_event = events[0]
-    rule_id = first_event['rule']['id']
-    fields = get_template_fields(rule_id, first_event)
-    fieldnames = list(fields.keys())
+    # Group events by rule_id
+    events_by_rule_id = {}
+    for event in events:
+        rule_id = event['rule']['id']
+        if rule_id not in events_by_rule_id:
+            events_by_rule_id[rule_id] = []
+        events_by_rule_id[rule_id].append(event)
     
-    with open(CSV_FILE_PATH, 'w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for event in events:
-            rule_id = event['rule']['id']
-            fields = get_template_fields(rule_id, event)
-            row = {key: eval(value, {'alert_json': event}) for key, value in fields.items()}
-            writer.writerow(row)
+    # Save each group of events to a separate CSV file
+    for rule_id, events in events_by_rule_id.items():
+        fields = get_template_fields(rule_id, events[0])
+        fieldnames = list(fields.keys())
+        csv_file_path = CSV_FILE_PATH_TEMPLATE.format(rule_id=rule_id)
+        
+        with open(csv_file_path, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for event in events:
+                row = {key: eval(value, {'alert_json': event}) for key, value in fields.items()}
+                writer.writerow(row)
+        logging.info(f"CSV file created: {csv_file_path}")
 
 def send_aggregated_events(events):
     if not events:
         return
     
-    # Use the first event to generate the message
-    first_event = events[0]
-    rule_id = first_event['rule']['id']
-    template_path = f'/var/ossec/integrations/templates/{rule_id}.json'
-    if not os.path.exists(template_path):
-        template_path = DEFAULT_TEMPLATE_PATH
-    message, _ = load_and_fill_template(template_path, first_event)
+    # Group events by rule_id
+    events_by_rule_id = {}
+    for event in events:
+        rule_id = event['rule']['id']
+        if rule_id not in events_by_rule_id:
+            events_by_rule_id[rule_id] = []
+        events_by_rule_id[rule_id].append(event)
     
-    # Read the CSV content
-    with open(CSV_FILE_PATH, 'r') as file:
-        csv_content = file.read()
-    
-    full_message = f"{message}\n\nCSV Data:\n{csv_content}"
-    payload = {
-        'chat_id': CHAT_ID,
-        'text': full_message
-    }
-    headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
-    response = requests.post(HOOK_URL, json=payload, headers=headers)
-    return response.status_code
+    # Send an alert for each group of events
+    for rule_id, events in events_by_rule_id.items():
+        # Use the first event to generate the message
+        first_event = events[0]
+        template_path = f'/var/ossec/integrations/templates/{rule_id}.json'
+        if not os.path.exists(template_path):
+            template_path = DEFAULT_TEMPLATE_PATH
+        message, _ = load_and_fill_template(template_path, first_event)
+        
+        # Append the number of events to the message
+        event_count = len(events)
+        message += f"\n\nNumber of events in CSV: {event_count}"
+        
+        # Log the generated message
+        logging.info(f"Generated message: {message}")
+        
+        # Determine the CSV file path
+        csv_file_path = CSV_FILE_PATH_TEMPLATE.format(rule_id=rule_id)
+        
+        # Send the message with the CSV file as an attachment
+        payload = {
+            'chat_id': CHAT_ID,
+            'caption': message
+        }
+        try:
+            with open(csv_file_path, 'rb') as csvfile:
+                files = {'document': csvfile}
+                response = requests.post(HOOK_URL, data=payload, files=files)
+                logging.info(f"Message sent with status code: {response.status_code}")
+                if response.status_code != 200:
+                    logging.error(f"Error sending message: {response.text}")
+        except Exception as e:
+            logging.error(f"Error opening or sending CSV file: {e}")
 
 while True:
     events = parse_events()
