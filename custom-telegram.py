@@ -6,10 +6,6 @@ import csv
 import time
 import requests
 import configparser
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Read configuration from config.ini
 config = configparser.ConfigParser()
@@ -76,7 +72,7 @@ def save_to_csv(events):
             for event in events:
                 row = {key: eval(value, {'alert_json': event}) for key, value in fields.items()}
                 writer.writerow(row)
-        logging.info(f"CSV file created: {csv_file_path}")
+        # logging.info(f"CSV file created: {csv_file_path}")
 
 def send_aggregated_events(events):
     if not events:
@@ -104,7 +100,7 @@ def send_aggregated_events(events):
         message += f"\n\nNumber of events in CSV: {event_count}"
         
         # Log the generated message
-        logging.info(f"Generated message: {message}")
+        # logging.info(f"Generated message: {message}")
         
         # Determine the CSV file path
         csv_file_path = CSV_FILE_PATH_TEMPLATE.format(rule_id=rule_id)
@@ -118,15 +114,17 @@ def send_aggregated_events(events):
             with open(csv_file_path, 'rb') as csvfile:
                 files = {'document': csvfile}
                 response = requests.post(HOOK_URL, data=payload, files=files)
-                logging.info(f"Message sent with status code: {response.status_code}")
+                # logging.info(f"Message sent with status code: {response.status_code}")
                 if response.status_code != 200:
-                    logging.error(f"Error sending message: {response.text}")
+                    # logging.error(f"Error sending message: {response.text}")
+                    pass
         except Exception as e:
-            logging.error(f"Error opening or sending CSV file: {e}")
+            # logging.error(f"Error opening or sending CSV file: {e}")
+            pass
 
 while True:
     events = parse_events()
     if events:
         save_to_csv(events)
         send_aggregated_events(events)
-    time.sleep(30)
+    time.sleep(60)
