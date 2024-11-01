@@ -1,0 +1,116 @@
+<!-- static/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Incident Management</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-right: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .details-btn {
+            background-color: #2196F3;
+        }
+        .test-controls {
+            margin-bottom: 20px;
+        }
+    </style>
+    <script>
+        function parseDescription(description) {
+            try {
+                return JSON.parse(description);
+            } catch (e) {
+                return { rule_description: description };
+            }
+        }
+
+        async function loadIncidents() {
+            const response = await fetch('/incidents/');
+            const incidents = await response.json();
+            const table = document.getElementById('incidents');
+            table.innerHTML = `
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            `;
+            
+            for (const [id, incident] of Object.entries(incidents)) {
+                const details = parseDescription(incident.description);
+                const row = table.insertRow();
+                row.innerHTML = `
+                    <td>${incident.timestamp}</td>
+                    <td>${details.rule_description}</td>
+                    <td>${incident.acknowledged ? '✅ Acknowledged' : incident.escalated ? '⚠️ Escalated' : '⏳ Pending'}</td>
+                    <td>
+                        ${!incident.acknowledged && !incident.escalated ? 
+                            `<button onclick="acknowledgeIncident('${id}')">Acknowledge</button>` : 
+                            incident.escalated ? 'Escalated' : 'Acknowledged'}
+                        <button class="details-btn" onclick="window.location.href='/detail.html?id=${id}'">Show Details</button>
+                    </td>
+                `;
+            }
+        }
+
+        async function acknowledgeIncident(id) {
+            try {
+                await fetch(`/incidents/${id}/acknowledge`, {
+                    method: 'POST'
+                });
+                loadIncidents();
+            } catch (error) {
+                console.error('Error acknowledging incident:', error);
+            }
+        }
+
+        window.onload = function() {
+            loadIncidents();
+            setInterval(loadIncidents, 5000);
+        }
+    </script>
+</head>
+<body>
+    <h1>Incident Management</h1>
+    <table id="incidents">
+        <tr>
+            <th>Timestamp</th>
+            <th>Description</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </table>
+</body>
+</html>

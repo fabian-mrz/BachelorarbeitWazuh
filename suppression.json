@@ -2,8 +2,7 @@
     "criteria": [
         {
             "rule_id": "533",
-            "agent_ip": "192.168.0.1",
-            "agent_name": "FakeHost1",
+            "agent_ip": ["192.168.178.21","192.168.178.202"],
             "timeframe": "2024-10-05T21:00:00.000+0000/2031-10-05T23:00:00.000+0000",
             "fields": {
                 "rule_id": "alert_json['rule']['id']",
@@ -14,8 +13,7 @@
         },
         {
             "rule_id": "533",
-            "agent_ip": "192.168.0.2",
-            "agent_name": "FakeHost2",
+            "agent_ip": ["192.168.178.21","192.168.178.202"],
             "timeframe": "2024-10-05T21:00:00.000+0000/2031-10-05T23:00:00.000+0000",
             "fields": {
                 "rule_id": "alert_json['rule']['id']",
@@ -26,8 +24,7 @@
         },
         {
             "rule_id": "510",
-            "agent_ip": "192.168.0.1",
-            "agent_name": "FakeHost1",
+            "agent_ip": ["192.168.178.21"],
             "timeframe": "2024-10-05T21:00:00.000+0000/2031-10-05T23:00:00.000+0000",
             "fields": {
                 "rule_id": "alert_json['rule']['id']",
@@ -39,8 +36,7 @@
         },
         {
             "rule_id": "510",
-            "agent_ip": "192.168.0.2",
-            "agent_name": "FakeHost2",
+            "agent_ip": ["192.168.178.31"],
             "timeframe": "2024-10-05T21:00:00.000+0000/2031-10-05T23:00:00.000+0000",
             "fields": {
                 "rule_id": "alert_json['rule']['id']",
@@ -48,32 +44,6 @@
                 "agent_name": "alert_json['agent']['name']",
                 "timestamp": "alert_json['timestamp']",
                 "data_title": "alert_json['data']['title']"
-            }
-        },
-        {
-            "rule_id": "5404",
-            "agent_ip": "192.168.0.1",
-            "agent_name": "FakeHost1",
-            "timeframe": "2024-10-05T21:00:00.000+0000/2031-10-05T23:00:00.000+0000",
-            "fields": {
-                "rule_id": "alert_json['rule']['id']",
-                "agent_ip": "alert_json['agent']['ip']",
-                "agent_name": "alert_json['agent']['name']",
-                "timestamp": "alert_json['timestamp']",
-                "additional_field": "alert_json['additional_field']"
-            }
-        },
-        {
-            "rule_id": "5404",
-            "agent_ip": "192.168.0.2",
-            "agent_name": "FakeHost2",
-            "timeframe": "2024-10-05T21:00:00.000+0000/2031-10-05T23:00:00.000+0000",
-            "fields": {
-                "rule_id": "alert_json['rule']['id']",
-                "agent_ip": "alert_json['agent']['ip']",
-                "agent_name": "alert_json['agent']['name']",
-                "timestamp": "alert_json['timestamp']",
-                "additional_field": "alert_json['additional_field']"
             }
         }
     ]

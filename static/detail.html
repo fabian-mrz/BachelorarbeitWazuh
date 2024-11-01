@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Incident Details</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .details-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .details-table th {
+            background-color: #4CAF50;
+            color: white;
+            text-align: left;
+            padding: 12px;
+        }
+        .details-table td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        .back-btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .download-btn {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        .download-btn:hover {
+            background-color: #1976D2;
+        }
+        pre {
+            background-color: #f8f8f8;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+    <script>
+        async function loadIncidentDetails() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const id = urlParams.get('id');
+            
+            const response = await fetch('/incidents/');
+            const incidents = await response.json();
+            const incident = incidents[id];
+            
+            if (!incident) {
+                document.body.innerHTML = '<h1>Incident not found</h1>';
+                return;
+            }
+
+            const details = JSON.parse(incident.description);
+            const detailsTable = document.getElementById('details');
+            
+            // Add basic incident info
+            addRow('Incident ID', id);
+            addRow('Timestamp', incident.timestamp);
+            addRow('Status', incident.acknowledged ? 'Acknowledged' : incident.escalated ? 'Escalated' : 'Pending');
+            
+            // Add CSV download if available
+            if (details.csv_path) {
+                addRow('CSV Export', `<a href="${details.csv_path}" class="download-btn" download>Download Events CSV</a>`);
+            }
+            
+            // Add parsed details
+            for (const [key, value] of Object.entries(details)) {
+                if (key === 'csv_path') continue; // Skip csv_path as we handled it above
+                if (key === 'sample_event') {
+                    addRow(key, `<pre>${JSON.stringify(value, null, 2)}</pre>`);
+                } else if (Array.isArray(value)) {
+                    addRow(key, value.join(', '));
+                } else {
+                    addRow(key, value);
+                }
+            }
+        }
+
+        function addRow(key, value) {
+            const table = document.getElementById('details');
+            const row = table.insertRow();
+            row.innerHTML = `
+                <td><strong>${key}</strong></td>
+                <td>${value}</td>
+            `;
+        }
+
+        window.onload = loadIncidentDetails;
+    </script>
+</head>
+<body>
+    <button class="back-btn" onclick="window.location.href='/'">Back to Incidents</button>
+    <h1>Incident Details</h1>
+    <table id="details" class="details-table"></table>
+</body>
+</html>
