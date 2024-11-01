@@ -38,7 +38,7 @@ def get_field_values(template_fields, event):
         try:
             values[field_name] = eval(field_expr, {'alert_json': event})
         except Exception as e:
-            print(f"Error evaluating field {field_name}: {e}")
+            #print(f"Error evaluating field {field_name}: {e}") # Commented out to avoid spamming logs
             values[field_name] = 'N/A'
     return values
 
@@ -139,7 +139,7 @@ async def send_to_incident_server(events):
         except requests.exceptions.RequestException as e:
             print(f"Failed to send incident: {e}")
 
-            
+
 async def main():
     """Main event processing loop"""
     while True:

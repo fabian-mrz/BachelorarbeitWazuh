@@ -1,10 +1,14 @@
 {
-    "template": "### Incident name: Security Alert\n\n+ Agent: {agent}\n\n### What is it?\n\n{description}\n\n### When did it happen?\n\n{timestamp} UTC\n\n### Why does it matter?\n\nBecause of {description}\n\n### Additional Information\n\n+ Alert Level: {alert_level}",
+    "template": "🚨 *New Security Incident*\n\n*Rule ID:* {rule_id}\n*Description:* {description}\n*Level:* {level}\n*Total Events:* {total_events}\n*Affected Agents:* {agents}\n*First Event:* {first_event}\n*Last Event:* {last_event}\n\n*Sample Event:*\n```\n{sample_event}\n```",
     
     "fields": {
+        "rule_id": "alert_json.get('rule', {}).get('id', 'N/A')",
         "description": "alert_json.get('rule', {}).get('description', 'N/A')",
-        "alert_level": "alert_json.get('rule', {}).get('level', 'N/A')",
-        "agent": "alert_json.get('agent', {}).get('name', 'N/A')",
-        "timestamp": "alert_json.get('timestamp', 'N/A')"
+        "level": "alert_json.get('rule', {}).get('level', 'N/A')",
+        "total_events": "len(alert_json)",
+        "agents": "alert_json.get('agent', {}).get('name', 'N/A')",
+        "first_event": "alert_json.get('timestamp', 'N/A')",
+        "last_event": "alert_json.get('timestamp', 'N/A')",
+        "sample_event": "json.dumps(alert_json, indent=2)"
     }
 }
