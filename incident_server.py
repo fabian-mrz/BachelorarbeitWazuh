@@ -15,7 +15,10 @@ import aiohttp
 from email.mime.application import MIMEApplication
 from telegram import Bot
 from telegram.constants import ParseMode
-
+import subprocess
+import time
+import os
+from pathlib import Path
 
 app = FastAPI()
 
@@ -25,6 +28,8 @@ BASE_DIR = './'
 STATIC_DIR = './static/incidents'
 TEMPLATES_DIR = './templates'
 DEFAULT_TEMPLATE_PATH = os.path.join(TEMPLATES_DIR, 'default.json')
+# Set output directory
+OUTPUT_DIR = Path('/var/ossec/integrations')
 
 #telegram
 config = configparser.ConfigParser()
@@ -32,6 +37,9 @@ config.read('config.ini')
 
 CHAT_ID = config['telegram']['CHAT_ID']
 BOT_TOKEN = config['telegram']['BOT_TOKEN']
+SIP_USERNAME = config['SIP']['username']
+SIP_PASSWORD = config['SIP']['password']
+SIP_HOST = config['SIP']['host']
 
 #email
 SMTP_SERVER = config['SMTP']['server']
@@ -49,6 +57,7 @@ class Incident(BaseModel):
     description: str
     acknowledged: bool = False
     escalated: bool = False
+    update_count: int = 0  # Add counter for updates
 
 async def handle_incident_timer(incident_id: str):
     await asyncio.sleep(60)
@@ -175,11 +184,11 @@ async def send_notifications(incident_id: str):
                 if incidents[incident_id].acknowledged:
                     return
                 
-                # Simulate phone calls
+                # Make phone calls with await
                 for contact_id in phase['contacts']:
                     contact = contacts[contact_id]
                     print(f"☎️ Calling {contact['name']} at {contact['phone']}")
-                    # In real implementation, integrate with phone calling service here
+                    await make_call(contact['phone'], message)
                     
     except Exception as e:
         print(f"Error in notification process: {e}")
@@ -213,18 +222,153 @@ async def send_telegram_notification(message: str, csv_path: str = None):
     except Exception as e:
         print(f"Error sending telegram notification: {e}")
 
+#Phone call
+def text_to_speech(text: str, output_file: Path) -> bool:
+    """Convert text to speech using espeak"""
+    try:
+        subprocess.run(
+            ['espeak', '-v', 'en', '-s', '120', text, '--stdout'],
+            stdout=output_file.open('wb'),
+            check=True
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating speech: {e}")
+        return False
 
-# Update incident creation to use new notification function
-@app.post("/incidents/")
-async def create_incident(incident: Incident):
-    incidents[incident.id] = incident
-    print(f"📝 New incident created: {incident.id}")
+async def make_call(phone_number: str, message: str) -> bool:
+    """Make phone call and play message using linphone"""
+    output_file = OUTPUT_DIR / 'alert_message.wav'
     
-    # Start notification handling in background
-    asyncio.create_task(send_notifications(incident.id))
-    
-    return {"message": "Incident created", "id": incident.id}
+    try:
+        # Generate speech file
+        proc = await asyncio.create_subprocess_exec(
+            'espeak', '-v', 'en', '-s', '120', message, '--stdout',
+            stdout=open(output_file, 'wb'),
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.wait()
+        
+        # Initialize SIP client
+        proc = await asyncio.create_subprocess_exec(
+            'linphonecsh', 'init',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.wait()
+        await asyncio.sleep(2)
+        
+        # Register with SIP server
+        proc = await asyncio.create_subprocess_exec(
+            'linphonecsh', 'register',
+            '--username', SIP_USERNAME,
+            '--host', SIP_HOST,
+            '--password', SIP_PASSWORD,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.wait()
+        await asyncio.sleep(2)
+        
+        # Configure for file playback
+        proc = await asyncio.create_subprocess_exec(
+            'linphonecsh', 'soundcard', 'use', 'files',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.wait()
+        await asyncio.sleep(2)
+        
+        # Make call
+        sip_address = f"sip:{phone_number}@{SIP_HOST}"
+        proc = await asyncio.create_subprocess_exec(
+            'linphonecsh', 'dial', sip_address,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.wait()
+        await asyncio.sleep(10)
+        
+        # Play message
+        proc = await asyncio.create_subprocess_exec(
+            'linphonecsh', 'generic', f'play {output_file}',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.wait()
+        await asyncio.sleep(60)
+        
+        # End call
+        proc = await asyncio.create_subprocess_exec(
+            'linphonecsh', 'exit',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.wait()
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error in call process: {e}")
+        return False
+    finally:
+        # Cleanup
+        try:
+            output_file.unlink(missing_ok=True)
+        except Exception as e:
+            print(f"Error cleaning up: {e}")
 
+
+
+##update
+async def find_active_incident(rule_id: str) -> str:
+    """Find existing unacknowledged incident for rule_id"""
+    for inc_id, inc in incidents.items():
+        if not inc.acknowledged:
+            try:
+                details = json.loads(inc.description)
+                if details['rule_id'] == rule_id:
+                    return inc_id
+            except:
+                continue
+    return None
+
+async def update_incident(incident_id: str, new_data: dict):
+    """Update existing incident with new event data"""
+    try:
+        incident = incidents[incident_id]
+        old_data = json.loads(incident.description)
+        
+        # Extract relevant data from new incident
+        old_data['total_events'] = old_data.get('total_events', 0) + 1
+        old_data['last_event_timestamp'] = new_data.get('last_event_timestamp', 
+                                                       new_data.get('timestamp', 'N/A'))
+        
+        # Update agent names if present - handle lists properly
+        if 'agent_names' in old_data and 'agent_names' in new_data:
+            # Convert lists to sets, merge, then back to list
+            old_agents = set(old_data['agent_names'])
+            new_agents = set(new_data['agent_names'])
+            old_data['agent_names'] = list(old_agents.union(new_agents))
+            
+        # Update sample event if present
+        if 'sample_event' in new_data:
+            old_data['sample_event'] = new_data['sample_event']
+            
+        # Update CSV path if present
+        if 'csv_path' in new_data:
+            old_data['csv_path'] = new_data['csv_path']
+        
+        # Update incident
+        incident.description = json.dumps(old_data)
+        incident.update_count += 1
+        print(f"📝 Updated incident {incident_id} (Update #{incident.update_count})")
+        
+    except Exception as e:
+        print(f"Error in update_incident: {e}")
+        print(f"Old data: {old_data}")
+        print(f"New data: {new_data}")
+        raise
 
 
 
@@ -234,16 +378,30 @@ async def create_incident(incident: Incident):
 
 ### routes
 
-# Update incident creation to use new phase handling
 @app.post("/incidents/")
 async def create_incident(incident: Incident):
-    incidents[incident.id] = incident
-    print(f"📝 New incident created: {incident.id}")
-    
-    # Start phase handling in background
-    asyncio.create_task(handle_incident_phases(incident.id))
-    
-    return {"message": "Incident created", "id": incident.id}
+    try:
+        incident_data = json.loads(incident.description)
+        rule_id = incident_data['rule_id']
+        
+        # Check for existing active incident
+        existing_id = await find_active_incident(rule_id)
+        if existing_id:
+            await update_incident(existing_id, incident_data)
+            return {"message": "Incident updated", "id": existing_id}
+            
+        # Create new incident if none exists
+        incidents[incident.id] = incident
+        print(f"📝 New incident created: {incident.id}")
+        
+        # Start notification handling in background
+        asyncio.create_task(send_notifications(incident.id))
+        
+        return {"message": "Incident created", "id": incident.id}
+        
+    except Exception as e:
+        print(f"Error creating/updating incident: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/incidents/{incident_id}/acknowledge")
 async def acknowledge_incident(incident_id: str):

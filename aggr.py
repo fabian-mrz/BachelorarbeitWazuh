@@ -1,155 +1,112 @@
 import os
 import json
-import csv
 import time
-from datetime import datetime
 import requests
-import asyncio
-from pathlib import Path
+from datetime import datetime
+import pandas as pd
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # Constants
 EVENTS_DIR = './events'
-TEMPLATES_DIR = './templates'
 CSV_STORAGE_DIR = './static/incidents'
 INCIDENT_SERVER_URL = "http://localhost:8000/incidents/"
-DEFAULT_TEMPLATE_PATH = os.path.join(TEMPLATES_DIR, 'default.json')
+# Add at top with other constants
+RULE_DELAY = 5  # 5 seconds delay between same rule events
+last_rule_events = {}  # Track last event time per rule ID
 
 # Create required directories
 os.makedirs(CSV_STORAGE_DIR, exist_ok=True)
-os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
-def load_template(rule_id):
-    """Load template for specific rule_id or fall back to default"""
-    template_path = os.path.join(TEMPLATES_DIR, f'{rule_id}.json')
-    try:
-        if os.path.exists(template_path):
-            with open(template_path, 'r') as f:
-                return json.load(f)
-        with open(DEFAULT_TEMPLATE_PATH, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading template: {e}")
-        return None
-
-def get_field_values(template_fields, event):
-    """Extract field values based on template"""
-    values = {}
-    for field_name, field_expr in template_fields.items():
-        try:
-            values[field_name] = eval(field_expr, {'alert_json': event})
-        except Exception as e:
-            #print(f"Error evaluating field {field_name}: {e}") # Commented out to avoid spamming logs
-            values[field_name] = 'N/A'
-    return values
-
-def format_description(template, field_values):
-    """Format description using template"""
-    try:
-        return template.format(**field_values)
-    except Exception as e:
-        print(f"Error formatting description: {e}")
-        return "Error formatting description"
-
-def parse_events():
-    """Parse and aggregate events from JSON files"""
-    aggregated_events = []
-    for filename in os.listdir(EVENTS_DIR):
-        if filename.startswith('events_') and filename.endswith('.json'):
-            try:
-                file_path = os.path.join(EVENTS_DIR, filename)
-                with open(file_path, 'r') as file:
-                    events = json.load(file)
-                    aggregated_events.extend(events)
-                os.remove(file_path)
-            except Exception as e:
-                print(f"Error processing {filename}: {e}")
-    return aggregated_events
-
-def save_to_csv(events, incident_id, template):
-    """Save events to CSV using template fields"""
-    if not events or not template:
-        return None
+def save_events_to_csv(events, incident_id):
+    """Save events to CSV file"""
+    directory = os.path.join(CSV_STORAGE_DIR, incident_id)
+    os.makedirs(directory, exist_ok=True)
     
-    incident_dir = os.path.join(CSV_STORAGE_DIR, incident_id)
-    os.makedirs(incident_dir, exist_ok=True)
-    csv_path = os.path.join(incident_dir, "events.csv")
+    csv_path = os.path.join(directory, 'events.csv')
+    df = pd.DataFrame(events)
+    df.to_csv(csv_path, index=False)
     
-    try:
-        with open(csv_path, 'w', newline='') as csvfile:
-            fieldnames = list(template['fields'].keys())
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            for event in events:
-                row = get_field_values(template['fields'], event)
-                writer.writerow(row)
-        return f"/incidents/{incident_id}/events.csv"
-    except Exception as e:
-        print(f"Error writing CSV: {e}")
-        return None
+    return f'/incidents/{incident_id}/events.csv'
 
-async def send_to_incident_server(events):
-    """Send events to incident server with template-based CSV"""
-    if not events:
+def process_rule_events(rule_events):
+    """Process aggregated events and send incidents"""
+    if not rule_events:
         return
+        
+    first_event = rule_events[0]
+    rule_id = first_event['rule']['id']
+    current_time = time.time()
     
-    events_by_rule_id = {}
-    for event in events:
-        rule_id = event['rule']['id']
-        if rule_id not in events_by_rule_id:
-            events_by_rule_id[rule_id] = []
-        events_by_rule_id[rule_id].append(event)
+    # Check if we need to wait for this rule
+    if rule_id in last_rule_events:
+        time_since_last = current_time - last_rule_events[rule_id]
+        if time_since_last < RULE_DELAY:
+            print(f"⏳ Waiting {RULE_DELAY - time_since_last:.1f}s for rule {rule_id}")
+            time.sleep(RULE_DELAY - time_since_last)
     
-    for rule_id, rule_events in events_by_rule_id.items():
-        template = load_template(rule_id)
-        if not template:
-            continue
-            
-        incident_id = f"{rule_id}_{int(time.time())}"
-        first_event = rule_events[0]
-        
-        # Save CSV and get path
-        csv_path = save_to_csv(rule_events, incident_id, template)
-        
-        incident = {
-            "id": incident_id,
-            "timestamp": datetime.now().isoformat(),
-            "description": json.dumps({
-                "rule_id": rule_id,
-                "rule_description": first_event['rule']['description'],
-                "rule_level": first_event['rule']['level'],
-                "total_events": len(rule_events),
-                "agent_names": list(set(e['agent']['name'] for e in rule_events)),
-                "first_event_timestamp": rule_events[0]['timestamp'],
-                "last_event_timestamp": rule_events[-1]['timestamp'],
-                "sample_event": rule_events[0],
-                "csv_path": csv_path
-            }),
-            "acknowledged": False,
-            "escalated": False
-        }
-        
-        try:
-            response = requests.post(
-                INCIDENT_SERVER_URL,
-                json=incident,
-                headers={"Content-Type": "application/json"}
-            )
-            response.raise_for_status()
-            print(f"Successfully sent incident {incident_id}")
-        except requests.exceptions.RequestException as e:
-            print(f"Failed to send incident: {e}")
+    # Update last event time and process
+    last_rule_events[rule_id] = current_time
+    incident_id = f"{rule_id}_{int(current_time)}"
+    csv_path = save_events_to_csv(rule_events, incident_id)
+    
+    incident = {
+        "id": incident_id,
+        "timestamp": datetime.now().isoformat(),
+        "description": json.dumps({
+            "rule_id": rule_id,
+            "rule_description": first_event['rule']['description'],
+            "rule_level": first_event['rule']['level'],
+            "total_events": len(rule_events),
+            "agent_names": list(set(e['agent']['name'] for e in rule_events)),
+            "first_event_timestamp": rule_events[0]['timestamp'],
+            "last_event_timestamp": rule_events[-1]['timestamp'],
+            "sample_event": rule_events[0],
+            "csv_path": csv_path
+        }),
+        "acknowledged": False,
+        "escalated": False
+    }
+    
+    try:
+        response = requests.post(
+            INCIDENT_SERVER_URL,
+            json=incident,
+            headers={"Content-Type": "application/json"}
+        )
+        response.raise_for_status()
+        print(f"✅ Events sent for rule {rule_id}")
+    except Exception as e:
+        print(f"❌ Error sending events: {e}")
 
+class EventHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        if event.is_directory:
+            return
+        if event.src_path.endswith('.json'):
+            try:
+                with open(event.src_path, 'r') as f:
+                    rule_events = json.load(f)
+                process_rule_events(rule_events)
+                os.remove(event.src_path)  # Clean up processed file
+            except Exception as e:
+                print(f"Error processing file {event.src_path}: {e}")
 
-async def main():
-    """Main event processing loop"""
-    while True:
-        try:
-            events = parse_events()
-            if events:
-                await send_to_incident_server(events)
-        except Exception as e:
-            print(f"Error in main loop: {e}")
-        await asyncio.sleep(60)
+def main():
+    event_handler = EventHandler()
+    observer = Observer()
+    observer.schedule(event_handler, EVENTS_DIR, recursive=False)
+    observer.start()
+    print(f"🔍 Monitoring {EVENTS_DIR} for new events...")
+    
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+        print("\n⚡ Stopping event monitoring...")
+    
+    observer.join()
 
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    main()
