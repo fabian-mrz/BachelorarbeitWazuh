@@ -1,32 +1,41 @@
 <!-- static/index.html -->
 <!DOCTYPE html>
 <html>
+
+
 <head>
     <title>Incident Management</title>
+    <link rel="stylesheet" href="styles.css">
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
             background-color: #f5f5f5;
         }
+
         h1 {
             color: #333;
         }
+
         table {
             width: 100%;
             border-collapse: collapse;
             background-color: white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
-        th, td {
+
+        th,
+        td {
             padding: 12px;
             text-align: left;
             border-bottom: 1px solid #ddd;
         }
+
         th {
             background-color: #4CAF50;
             color: white;
         }
+
         button {
             background-color: #4CAF50;
             color: white;
@@ -36,17 +45,32 @@
             border-radius: 4px;
             margin-right: 5px;
         }
+
         button:hover {
             background-color: #45a049;
         }
+
         .details-btn {
             background-color: #2196F3;
         }
+
         .test-controls {
             margin-bottom: 20px;
         }
     </style>
     <script>
+        function setActiveNavLink() {
+            const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            navLinks.forEach(link => {
+                if (link.getAttribute('href') === currentPage) {
+                    link.classList.add('active');
+                }
+            });
+        }
+
+
         function parseDescription(description) {
             try {
                 return JSON.parse(description);
@@ -67,7 +91,7 @@
                     <th>Actions</th>
                 </tr>
             `;
-            
+
             for (const [id, incident] of Object.entries(incidents)) {
                 const details = parseDescription(incident.description);
                 const row = table.insertRow();
@@ -76,9 +100,9 @@
                     <td>${details.rule_description}</td>
                     <td>${incident.acknowledged ? '✅ Acknowledged' : incident.escalated ? '⚠️ Escalated' : '⏳ Pending'}</td>
                     <td>
-                        ${!incident.acknowledged && !incident.escalated ? 
-                            `<button onclick="acknowledgeIncident('${id}')">Acknowledge</button>` : 
-                            incident.escalated ? 'Escalated' : 'Acknowledged'}
+                        ${!incident.acknowledged && !incident.escalated ?
+                        `<button onclick="acknowledgeIncident('${id}')">Acknowledge</button>` :
+                        incident.escalated ? 'Escalated' : 'Acknowledged'}
                         <button class="details-btn" onclick="window.location.href='/detail.html?id=${id}'">Show Details</button>
                     </td>
                 `;
@@ -96,14 +120,25 @@
             }
         }
 
-        window.onload = function() {
+        window.onload = function () {
             loadIncidents();
             setInterval(loadIncidents, 5000);
+            loadIncidents();
+            setActiveNavLink();
         }
     </script>
 </head>
+
+
+
 <body>
-    <h1>Incident Management</h1>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="nav-link">Incidents</a>
+            <a href="escalations.html" class="nav-link">Escalation Settings</a>
+            <a href="contacts.html" class="nav-link">Contacts</a>
+        </div>
+    </nav>
     <table id="incidents">
         <tr>
             <th>Timestamp</th>
@@ -113,4 +148,6 @@
         </tr>
     </table>
 </body>
+
+
 </html>
