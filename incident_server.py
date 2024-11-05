@@ -19,6 +19,10 @@ import subprocess
 import time
 import os
 from pathlib import Path
+import time
+import wave
+
+
 
 app = FastAPI()
 
@@ -222,102 +226,6 @@ async def send_telegram_notification(message: str, csv_path: str = None):
     except Exception as e:
         print(f"Error sending telegram notification: {e}")
 
-#Phone call
-def text_to_speech(text: str, output_file: Path) -> bool:
-    """Convert text to speech using espeak"""
-    try:
-        subprocess.run(
-            ['espeak', '-v', 'en', '-s', '120', text, '--stdout'],
-            stdout=output_file.open('wb'),
-            check=True
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error generating speech: {e}")
-        return False
-
-async def make_call(phone_number: str, message: str) -> bool:
-    """Make phone call and play message using linphone"""
-    output_file = OUTPUT_DIR / 'alert_message.wav'
-    
-    try:
-        # Generate speech file
-        proc = await asyncio.create_subprocess_exec(
-            'espeak', '-v', 'en', '-s', '120', message, '--stdout',
-            stdout=open(output_file, 'wb'),
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.wait()
-        
-        # Initialize SIP client
-        proc = await asyncio.create_subprocess_exec(
-            'linphonecsh', 'init',
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.wait()
-        await asyncio.sleep(2)
-        
-        # Register with SIP server
-        proc = await asyncio.create_subprocess_exec(
-            'linphonecsh', 'register',
-            '--username', SIP_USERNAME,
-            '--host', SIP_HOST,
-            '--password', SIP_PASSWORD,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.wait()
-        await asyncio.sleep(2)
-        
-        # Configure for file playback
-        proc = await asyncio.create_subprocess_exec(
-            'linphonecsh', 'soundcard', 'use', 'files',
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.wait()
-        await asyncio.sleep(2)
-        
-        # Make call
-        sip_address = f"sip:{phone_number}@{SIP_HOST}"
-        proc = await asyncio.create_subprocess_exec(
-            'linphonecsh', 'dial', sip_address,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.wait()
-        await asyncio.sleep(10)
-        
-        # Play message
-        proc = await asyncio.create_subprocess_exec(
-            'linphonecsh', 'generic', f'play {output_file}',
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.wait()
-        await asyncio.sleep(60)
-        
-        # End call
-        proc = await asyncio.create_subprocess_exec(
-            'linphonecsh', 'exit',
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.wait()
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error in call process: {e}")
-        return False
-    finally:
-        # Cleanup
-        try:
-            output_file.unlink(missing_ok=True)
-        except Exception as e:
-            print(f"Error cleaning up: {e}")
-
 
 
 ##update
@@ -371,8 +279,122 @@ async def update_incident(incident_id: str, new_data: dict):
         raise
 
 
+#call
+def text_to_speech(text: str, output_file: Path) -> bool:
+    """Convert text to speech using espeak"""
+    try:
+        # Convert Path to string for file operations
+        output_path = str(output_file)
+        with open(output_path, 'wb') as f:
+            subprocess.run(
+                ['espeak', '-v', 'en', '-s', '120', text, '--stdout'],
+                stdout=f,
+                check=True
+            )
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating speech: {e}")
+        return False
 
+def get_wav_duration(filename: str) -> float:
+    """Get duration of WAV file in seconds"""
+    try:
+        # Ensure we're working with string path
+        filepath = str(filename) if isinstance(filename, Path) else filename
+        with wave.open(filepath, 'rb') as wav_file:
+            frames = wav_file.getnframes()
+            rate = wav_file.getframerate()
+            return frames / float(rate)
+    except Exception as e:
+        print(f"Error getting WAV duration: {e}")
+        return 0.0
+    
+async def make_call(sip_address: str, message: str) -> None:
+    """Make an async SIP call using linphonec"""
+    
+    # Start linphonec process
+    process = await asyncio.create_subprocess_exec(
+        'linphonec', '-d', '0',
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
 
+    async def write_cmd(cmd: str):
+        """Helper to write commands to linphonec"""
+        process.stdin.write(f"{cmd}\n".encode())
+        await process.stdin.drain()
+
+    try:
+                # Generate speech file
+        output_path = Path('output.wav')
+        text_to_speech(message, output_path)
+        duration = get_wav_duration(output_path)
+        print(f"Output duration: {duration} seconds")
+        # Register SIP account
+        await write_cmd(f'register sip:{SIP_USERNAME}@{SIP_HOST} {SIP_PASSWORD}')
+        await asyncio.sleep(3)
+
+        # Configure for WAV files
+        await write_cmd('soundcard use files')
+        await asyncio.sleep(3)
+
+        # Make the call
+        await write_cmd(f'call {sip_address}')
+
+        # Wait for connection
+        while True:
+            if process.stdout:
+                line = await process.stdout.readline()
+                if b"connected" in line:
+                    print("Call connected.")
+                    break
+
+        # Play and monitor
+        while True:
+            print("Playing message...")
+            await write_cmd('play output.wav')
+
+            start_time = time.time()
+            while time.time() - start_time < duration:
+                if process.stdout:
+                    line = await process.stdout.readline()
+                    line_str = line.decode().strip()
+                    print("Output:", line_str)
+
+                    if "Receiving tone 4" in line_str:
+                        print("ack")
+                        await write_cmd('play ack.wav')
+                        await asyncio.sleep(5)
+                        await write_cmd('terminate')
+                        await write_cmd('quit')
+                        return
+
+                    elif "Receiving tone 5" in line_str:
+                        print("skipped") 
+                        await write_cmd('play skip.wav')
+                        await asyncio.sleep(5)
+                        await write_cmd('terminate')
+                        await write_cmd('quit')
+                        return
+
+                    elif "Receiving tone 6" in line_str:
+                        print("replay")
+                        break
+
+                    elif "ended (Unknown error)" in line_str:
+                        print("Call ended with unknown error.")
+                        await write_cmd('terminate')
+                        await write_cmd('quit')
+                        return
+
+                await asyncio.sleep(0.1)
+
+    finally:
+        # Cleanup
+        if process.returncode is None:
+            process.terminate()
+            await process.wait()
 
 
 
