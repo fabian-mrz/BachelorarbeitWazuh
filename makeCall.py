@@ -61,6 +61,15 @@ def make_call(number, message):
                     linphonec_process.stdin.flush()
                     linphonec_process.terminate()
                     return False
+        elif "error" in output:
+                    print("Call ended with error.")
+                        # Terminate the call
+                    linphonec_process.stdin.write('terminate\n')
+                    linphonec_process.stdin.flush()
+                    linphonec_process.stdin.write('quit\n')
+                    linphonec_process.stdin.flush()
+                    linphonec_process.terminate()
+                    return False
     
     # Convert text message to speech
     text_to_speech(message, 'output.wav')
