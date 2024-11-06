@@ -25,7 +25,8 @@ def get_wav_duration(filename):
         return duration
 
 # Function to make a call using linphonec
-def make_call(sip_address, message):
+def make_call(number, message):
+    fulladdress = f'sip:{number}@{SIP_HOST}'
     # Start linphonec in daemon mode
     linphonec_process = subprocess.Popen(['linphonec', '-d', '0'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     
@@ -42,7 +43,7 @@ def make_call(sip_address, message):
     time.sleep(3)
     
     # Make the call
-    linphonec_process.stdin.write(f'call {sip_address}\n')
+    linphonec_process.stdin.write(f'call {fulladdress}\n')
     linphonec_process.stdin.flush()
     
     # Wait for the call to be connected
@@ -51,11 +52,18 @@ def make_call(sip_address, message):
         if "connected" in output:
             print("Call connected.")
             break
+        elif "declined" in output:
+                    print("Call was declined")
+                        # Terminate the call
+                    linphonec_process.stdin.write('terminate\n')
+                    linphonec_process.stdin.flush()
+                    linphonec_process.stdin.write('quit\n')
+                    linphonec_process.stdin.flush()
+                    linphonec_process.terminate()
+                    return False
     
     # Convert text message to speech
     text_to_speech(message, 'output.wav')
-    output_duration = get_wav_duration('output.wav')
-    print(f"Output duration: {output_duration} seconds")
     
     # Play the audio message and monitor for tones
     while True:
@@ -64,8 +72,7 @@ def make_call(sip_address, message):
         linphonec_process.stdin.flush()
         
         # Monitor the output for tones and log it
-        start_time = time.time()
-        while time.time() - start_time < output_duration:
+        while True:
             print("Checking for tones...")
             output = linphonec_process.stdout.readline()
             if output:
@@ -83,7 +90,7 @@ def make_call(sip_address, message):
                     linphonec_process.stdin.write('quit\n')
                     linphonec_process.stdin.flush()
                     linphonec_process.terminate()
-                    return
+                    return True
                 elif "Receiving tone 5" in output:
                     print("skipped")
                     linphonec_process.stdin.write('play skip.wav\n')
@@ -97,7 +104,7 @@ def make_call(sip_address, message):
                     linphonec_process.stdin.write('quit\n')
                     linphonec_process.stdin.flush()
                     linphonec_process.terminate()
-                    return
+                    return False
                 elif "Receiving tone 6" in output:
                     print("replay")
                     break  # Replay the message
@@ -105,13 +112,12 @@ def make_call(sip_address, message):
                     print("Call ended with unknown error.")
                         # Terminate the call
                     linphonec_process.stdin.write('terminate\n')
-                    linphonec_process.stdin.flush()
-                    linphonec_process.stdin.write('quit\n')
-                    linphonec_process.stdin.flush()
-                    linphonec_process.terminate()
-                    return
-    
+                linphonec_process.stdin.flush()
+                linphonec_process.stdin.write('quit\n')
+                linphonec_process.stdin.flush()
+                linphonec_process.terminate()
+                return False
 
 
 # Example call
-make_call('sip:+491@192.168.178.1', 'Hello this is a test call.')
+print(make_call('**6221', 'Hello this is a test call.'))
