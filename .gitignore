@@ -18,3 +18,4 @@ __pycache__/incident_server.cpython-311.pyc
 *.pyc
 contacts.json
 escalations.json
+output.wav

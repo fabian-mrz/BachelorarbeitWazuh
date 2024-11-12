@@ -21,10 +21,181 @@ import os
 from pathlib import Path
 import time
 import wave
+from typing import Optional, List
+import threading
+import subprocess
+import time
+import re
 
 
 
 app = FastAPI()
+
+
+##
+class LinphoneController:
+    def text_to_speech(self, text: str, filename: str = "output.wav") -> None:
+            """Convert text to speech and save as wav file"""
+            try:
+                subprocess.run(['espeak', text, '--stdout', '-s', '120'], stdout=open(filename, 'wb'))
+            except Exception as e:
+                print(f"Error generating speech: {e}")
+
+    def __init__(self, sip_server: str, username: str, password: str):
+        self.sip_server = sip_server
+        self.username = username
+        self.password = password
+        self.process: Optional[subprocess.Popen] = None
+        self.dtmf_digits: List[str] = []
+        self.call_active = False
+        self.call_result = None
+        self.stop_audio = False  # New flag for audio control
+        self.call_error = None  # Track error state
+
+    def _handle_dtmf(self, digit: str) -> Optional[bool]:
+        """Handle DTMF input and return True/False/None based on digit"""
+        if digit == '4':
+            print("Acknowledged")
+            self.stop_audio = True  # Stop audio loop
+            time.sleep(0.5)  # Small delay to ensure audio stops
+            self._write_command("play ack.wav")
+            time.sleep(4)
+            self.call_active = False
+            return True
+        elif digit == '5':
+            print("Skipped")
+            self.stop_audio = True  # Stop audio loop
+            time.sleep(0.5)  # Small delay to ensure audio stops
+            self._write_command("play skip.wav")
+            time.sleep(4)
+            self.call_active = False
+            return False
+        return None
+        
+    def _write_command(self, command: str) -> None:
+        """Write command to linphonec"""
+        print(f"Writing command: {command}")
+        self.process.stdin.write(f"{command}\n".encode())
+        self.process.stdin.flush()
+
+    def _play_audio_loop(self) -> None:
+        print("audio loop")
+        """Play audio file in loop while call is active"""
+        wav_file = "output.wav"
+        duration = self._get_wav_duration(wav_file)
+        
+        while self.call_active and not self.stop_audio:
+            print("Playing audio")
+            self._write_command(f"play {wav_file}")
+            time.sleep(duration + 0.5)
+
+    def _get_wav_duration(self, filename: str) -> float:
+        """Get duration of wav file in seconds using ffprobe"""
+        try:
+            cmd = [
+                'ffprobe', 
+                '-v', 'quiet',
+                '-show_entries', 'format=duration',
+                '-of', 'json',
+                filename
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            import json
+            duration = float(json.loads(result.stdout)['format']['duration'])
+            print(f"Duration of {filename}: {duration:.2f} seconds")
+            return duration
+        except Exception as e:
+            print(f"Error getting audio duration: {e}")
+            return 3.0  # Reasonable fallback for espeak output
+        
+
+    def _read_output(self) -> None:
+        """Read and process linphonec output"""
+        while self.call_active:
+            line = self.process.stdout.readline().decode().strip()
+            print(f"Linphone output: {line}")
+            if "Call" in line and "connected" in line:
+                audio_thread = threading.Thread(target=self._play_audio_loop)
+                audio_thread.daemon = True
+                audio_thread.start()
+            elif "Receiving tone" in line:
+                digit = re.search(r"tone (\d)", line)
+                if digit:
+                    digit_value = digit.group(1)
+                    self.dtmf_digits.append(digit_value)
+                    result = self._handle_dtmf(digit_value)
+                    if result is not None:
+                        self.call_result = result
+            elif "Call" in line and "error" in line:
+                self.call_error = "error"
+                self.call_active = False
+                self.call_result = False
+            elif "Call" in line and "declined" in line:
+                self.call_error = "declined"
+                self.call_active = False
+                self.call_result = False
+            elif "Call" in line and "ended" in line:
+                self.call_active = False
+                
+    def make_call(self, number: str, message: str, timeout: int = 60) -> List[str]:
+        """Make a call and collect DTMF tones"""
+        try:
+            self.call_result = None  # Initialize result
+            self.call_error = None  # Initialize error state
+
+            # Generate speech file first
+            self.text_to_speech(message)
+            
+            # Start linphonec process
+            print("Starting linphonec process")
+            self.process = subprocess.Popen(
+                ["linphonec"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            # Register SIP account
+            print("Registering SIP account")
+            self._write_command(f"register sip:{self.username}@{self.sip_server} {self.password}")
+            time.sleep(1)  # Wait for registration
+            
+            # Configure audio
+            print("Configuring audio")
+            self._write_command("soundcard use files")
+            time.sleep(1)
+            
+            # Start call
+            print(f"Making call to {number}")
+            self._write_command(f"call {number}")
+            self.call_active = True
+            
+            # Start output reading thread
+            print("Starting output thread")
+            output_thread = threading.Thread(target=self._read_output)
+            output_thread.start()
+            
+            # Wait for timeout or call end
+            print(f"Waiting for call to complete (timeout: {timeout} seconds)")
+            timeout_time = time.time() + timeout
+            while self.call_active and time.time() < timeout_time:
+                time.sleep(0.1)
+                
+            # Cleanup
+            print("Call completed - cleaning up")
+            self.call_active = False
+            self._write_command("terminate")
+            self._write_command("quit")
+            output_thread.join()
+            self.process.terminate()
+            
+            return self.dtmf_digits, self.call_result, self.call_error
+            
+        except Exception as e:
+            print(f"Error: {e}")
+            if self.process:
+                self.process.terminate()
+            return [], None, "error"
 
 # Add constants
 BASE_DIR = './'
@@ -51,6 +222,15 @@ SMTP_PORT = 587  # Office365 uses port 587 for STARTTLS
 SMTP_USER = config['SMTP']['username']
 SMTP_PASS = config['SMTP']['password']
 SMTP_FROM = config['SMTP']['from']
+
+#phone controller
+# Global LinphoneController instance
+phone_controller = LinphoneController(
+    sip_server=SIP_HOST,
+    username=SIP_USERNAME, 
+    password=SIP_PASSWORD
+)
+
 
 # In-memory storage (replace with database in production)
 incidents = {}
@@ -176,23 +356,12 @@ async def send_notifications(incident_id: str):
                 print(f"Error in telegram notification: {e}")
         
         # Handle phone calls with delay
-        for phase in escalation['phases']:
-            if incidents[incident_id].acknowledged:
-                return
-                
-            if phase['type'] == 'phone':
-                # Wait for configured delay
-                if phase['delay'] > 0:
-                    await asyncio.sleep(phase['delay'] * 60)
-                
-                if incidents[incident_id].acknowledged:
-                    return
-                
-                # Make phone calls with await
-                for contact_id in phase['contacts']:
-                    contact = contacts[contact_id]
-                    print(f"☎️ Calling {contact['name']} at {contact['phone']}")
-                    await make_call(contact['phone'], message)
+        acknowledged = await make_phone_call(
+                        contact=contact,
+                        message="This is a security alert notification. Press 4 to acknowledge or 5 to skip."
+                    )
+        print(f"☎️ Phone call completed for {contact['name']}: Acknowledged={acknowledged}")
+
                     
     except Exception as e:
         print(f"Error in notification process: {e}")
@@ -280,121 +449,48 @@ async def update_incident(incident_id: str, new_data: dict):
 
 
 #call
-def text_to_speech(text: str, output_file: Path) -> bool:
-    """Convert text to speech using espeak"""
+async def make_phone_call(contact: dict, message: str) -> bool:
+    """Make phone call and return if acknowledged"""
     try:
-        # Convert Path to string for file operations
-        output_path = str(output_file)
-        with open(output_path, 'wb') as f:
-            subprocess.run(
-                ['espeak', '-v', 'en', '-s', '120', text, '--stdout'],
-                stdout=f,
-                check=True
-            )
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error generating speech: {e}")
-        return False
-
-def get_wav_duration(filename: str) -> float:
-    """Get duration of WAV file in seconds"""
-    try:
-        # Ensure we're working with string path
-        filepath = str(filename) if isinstance(filename, Path) else filename
-        with wave.open(filepath, 'rb') as wav_file:
-            frames = wav_file.getnframes()
-            rate = wav_file.getframerate()
-            return frames / float(rate)
+        print(f"📞 Starting call to {contact['name']}")
+        print(f"   Phone: {contact['phone']}")
+        print(f"   Message length: {len(message)} chars")
+        
+        # Validate contact data
+        if not contact.get('phone'):
+            print("❌ Invalid phone number in contact")
+            return False
+            
+        # Debug LinphoneController state
+        print(f"   SIP Server: {phone_controller.sip_server}")
+        print(f"   SIP Username: {phone_controller.username}")
+        print(f"   Process active: {phone_controller.process is not None}")
+        
+        # Make the call with detailed error handling
+        dtmf, success, error = phone_controller.make_call(
+            number=contact['phone'],
+            message=message,
+            timeout=60
+        )
+        
+        print(f"   Call completed:")
+        print(f"   - DTMF received: {dtmf}")
+        print(f"   - Success: {success}")
+        print(f"   - Error: {error}")
+        
+        if error:
+            print(f"❌ Call failed for {contact['name']}: {error}")
+            return False
+            
+        return bool(success)
+        
     except Exception as e:
-        print(f"Error getting WAV duration: {e}")
-        return 0.0
-    
-async def make_call(sip_address: str, message: str) -> None:
-    """Make an async SIP call using linphonec"""
-    
-    # Start linphonec process
-    process = await asyncio.create_subprocess_exec(
-        'linphonec', '-d', '0',
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-
-    async def write_cmd(cmd: str):
-        """Helper to write commands to linphonec"""
-        process.stdin.write(f"{cmd}\n".encode())
-        await process.stdin.drain()
-
-    try:
-                # Generate speech file
-        output_path = Path('output.wav')
-        text_to_speech(message, output_path)
-        duration = get_wav_duration(output_path)
-        print(f"Output duration: {duration} seconds")
-        # Register SIP account
-        await write_cmd(f'register sip:{SIP_USERNAME}@{SIP_HOST} {SIP_PASSWORD}')
-        await asyncio.sleep(3)
-
-        # Configure for WAV files
-        await write_cmd('soundcard use files')
-        await asyncio.sleep(3)
-
-        # Make the call
-        await write_cmd(f'call {sip_address}')
-
-        # Wait for connection
-        while True:
-            if process.stdout:
-                line = await process.stdout.readline()
-                if b"connected" in line:
-                    print("Call connected.")
-                    break
-
-        # Play and monitor
-        while True:
-            print("Playing message...")
-            await write_cmd('play output.wav')
-
-            start_time = time.time()
-            while time.time() - start_time < duration:
-                if process.stdout:
-                    line = await process.stdout.readline()
-                    line_str = line.decode().strip()
-                    print("Output:", line_str)
-
-                    if "Receiving tone 4" in line_str:
-                        print("ack")
-                        await write_cmd('play ack.wav')
-                        await asyncio.sleep(5)
-                        await write_cmd('terminate')
-                        await write_cmd('quit')
-                        return
-
-                    elif "Receiving tone 5" in line_str:
-                        print("skipped") 
-                        await write_cmd('play skip.wav')
-                        await asyncio.sleep(5)
-                        await write_cmd('terminate')
-                        await write_cmd('quit')
-                        return
-
-                    elif "Receiving tone 6" in line_str:
-                        print("replay")
-                        break
-
-                    elif "ended (Unknown error)" in line_str:
-                        print("Call ended with unknown error.")
-                        await write_cmd('terminate')
-                        await write_cmd('quit')
-                        return
-
-                await asyncio.sleep(0.1)
-
-    finally:
-        # Cleanup
-        if process.returncode is None:
-            process.terminate()
-            await process.wait()
+        import traceback
+        print(f"❌ Exception in make_phone_call:")
+        print(f"   {str(e)}")
+        print("   Traceback:")
+        print(traceback.format_exc())
+        return False
 
 
 
