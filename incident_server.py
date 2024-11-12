@@ -240,6 +240,7 @@ class Incident(BaseModel):
     timestamp: str
     description: str
     acknowledged: bool = False
+    acknowledged_by: str = None
     escalated: bool = False
     update_count: int = 0  # Add counter for updates
 
@@ -354,13 +355,33 @@ async def send_notifications(incident_id: str):
                 )
             except Exception as e:
                 print(f"Error in telegram notification: {e}")
-        
+
         # Handle phone calls with delay
-        acknowledged = await make_phone_call(
-                        contact=contact,
-                        message="This is a security alert notification. Press 4 to acknowledge or 5 to skip."
-                    )
-        print(f"☎️ Phone call completed for {contact['name']}: Acknowledged={acknowledged}")
+        for phase in escalation['phases']:
+            if incidents[incident_id].acknowledged:
+                return
+                
+            if phase['type'] == 'phone':
+                # Wait for configured delay
+                if phase['delay'] > 0:
+                    await asyncio.sleep(phase['delay'] * 60)
+                
+                if incidents[incident_id].acknowledged:
+                    return
+                
+                # Make phone calls with await
+                for contact_id in phase['contacts']:
+                    print(f"📞 Calling {contacts[contact_id]['name']} ({contacts[contact_id]['phone']})")
+                    contact = contacts[contact_id]
+                    ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknoledge and 5 to skip. {message}")
+                    if ack:
+                        incidents[incident_id].acknowledged = True
+                        incidents[incident_id].acknowledged_by = contact['name']
+                        print(f"✅ Incident {incident_id} acknowledged by {contact['name']}")
+                        return
+                    
+                                  
+
 
                     
     except Exception as e:
