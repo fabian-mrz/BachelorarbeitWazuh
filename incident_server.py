@@ -34,6 +34,20 @@ app = FastAPI()
 
 ##
 class LinphoneController:
+    def reset(self):
+        """Reset controller state between calls"""
+        self.dtmf_digits = []
+        self.call_active = False
+        self.call_result = None
+        self.stop_audio = False
+        self.call_error = None
+        if self.process:
+            try:
+                self.process.terminate()
+                self.process = None
+            except:
+                pass
+
     def text_to_speech(self, text: str, filename: str = "output.wav") -> None:
             """Convert text to speech and save as wav file"""
             try:
@@ -140,8 +154,8 @@ class LinphoneController:
     def make_call(self, number: str, message: str, timeout: int = 60) -> List[str]:
         """Make a call and collect DTMF tones"""
         try:
-            self.call_result = None  # Initialize result
-            self.call_error = None  # Initialize error state
+            print("Making call")
+            self.reset()
 
             # Generate speech file first
             self.text_to_speech(message)
