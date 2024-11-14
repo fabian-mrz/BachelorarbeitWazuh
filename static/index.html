@@ -6,6 +6,14 @@
 <head>
     <title>Incident Management</title>
     <link rel="stylesheet" href="styles.css">
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="nav-link">Incidents</a>
+            <a href="escalations.html" class="nav-link">Escalation Settings</a>
+            <a href="contacts.html" class="nav-link">Contacts</a>
+            <a href="suppressions.html" class="nav-link">Suppressions</a>
+        </div>
+    </nav>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -59,6 +67,17 @@
         }
     </style>
     <script>
+        function getAuthHeaders() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+        }
         function setActiveNavLink() {
             const currentPage = window.location.pathname.split('/').pop() || 'index.html';
             const navLinks = document.querySelectorAll('.nav-link');
@@ -80,40 +99,62 @@
         }
 
         async function loadIncidents() {
-            const response = await fetch('/incidents/');
-            const incidents = await response.json();
-            const table = document.getElementById('incidents');
-            table.innerHTML = `
+            try {
+                const response = await fetch('/incidents/', {
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const incidents = await response.json();
+                const table = document.getElementById('incidents');
+                table.innerHTML = `
                 <tr>
-                    <th>Timestamp</th>
-                    <th>Description</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                <th>Timestamp</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th>Actions</th>
                 </tr>
             `;
 
-            for (const [id, incident] of Object.entries(incidents)) {
-                const details = parseDescription(incident.description);
-                const row = table.insertRow();
-                row.innerHTML = `
-                    <td>${incident.timestamp}</td>
-                    <td>${details.rule_description}</td>
-                    <td>${incident.acknowledged ? '✅ Acknowledged' : incident.escalated ? '⚠️ Escalated' : '⏳ Pending'}</td>
-                    <td>
-                        ${!incident.acknowledged && !incident.escalated ?
-                        `<button onclick="acknowledgeIncident('${id}')">Acknowledge</button>` :
-                        incident.escalated ? 'Escalated' : 'Acknowledged'}
-                        <button class="details-btn" onclick="window.location.href='/detail.html?id=${id}'">Show Details</button>
-                    </td>
+                for (const [id, incident] of Object.entries(incidents)) {
+                    const details = parseDescription(incident.description);
+                    const row = table.insertRow();
+                    row.innerHTML = `
+                <td>${incident.timestamp}</td>
+                <td>${details.rule_description}</td>
+                <td>${incident.acknowledged ? '✅ Acknowledged' : incident.escalated ? '⚠️ Escalated' : '⏳ Pending'}</td>
+                <td>
+                    ${!incident.acknowledged && !incident.escalated ?
+                            `<button onclick="acknowledgeIncident('${id}')">Acknowledge</button>` :
+                            incident.escalated ? 'Escalated' : 'Acknowledged'}
+                    <button class="details-btn" onclick="window.location.href='/detail.html?id=${id}'">Show Details</button>
+                </td>
                 `;
+                }
+            } catch (error) {
+                console.error('Error loading incidents:', error);
             }
         }
 
+        // Update acknowledgeIncident function
         async function acknowledgeIncident(id) {
             try {
-                await fetch(`/incidents/${id}/acknowledge`, {
-                    method: 'POST'
+                const response = await fetch(`/incidents/${id}/acknowledge`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
                 });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 loadIncidents();
             } catch (error) {
                 console.error('Error acknowledging incident:', error);
@@ -121,9 +162,13 @@
         }
 
         window.onload = function () {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
             loadIncidents();
             setInterval(loadIncidents, 5000);
-            loadIncidents();
             setActiveNavLink();
         }
     </script>
@@ -132,13 +177,7 @@
 
 
 <body>
-    <nav class="navbar">
-        <div class="nav-container">
-            <a href="index.html" class="nav-link">Incidents</a>
-            <a href="escalations.html" class="nav-link">Escalation Settings</a>
-            <a href="contacts.html" class="nav-link">Contacts</a>
-        </div>
-    </nav>
+
     <table id="incidents">
         <tr>
             <th>Timestamp</th>

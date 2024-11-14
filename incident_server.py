@@ -1,31 +1,26 @@
 # incident_server.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from datetime import datetime
 import asyncio
-from typing import Dict
+from typing import Dict, Optional, List
 import json
 import configparser
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import smtplib
-import aiohttp
 from email.mime.application import MIMEApplication
 from telegram import Bot
 from telegram.constants import ParseMode
 import subprocess
 import time
-import os
 from pathlib import Path
-import time
 import wave
-from typing import Optional, List
 import threading
-import subprocess
-import time
 import re
+from auth import verify_auth, create_access_token, verify_token
 
 
 
@@ -357,28 +352,28 @@ async def send_notifications(incident_id: str):
             contact = contacts[contact_id]
             
             # Send email with attachment
-            try:
-                msg = MIMEMultipart()
-                msg['From'] = SMTP_FROM
-                msg['To'] = contact['email']
-                msg['Subject'] = f"Security Alert - Rule {rule_id}"
-                msg.attach(MIMEText(message, 'plain'))
+            # try:
+            #     msg = MIMEMultipart()
+            #     msg['From'] = SMTP_FROM
+            #     msg['To'] = contact['email']
+            #     msg['Subject'] = f"Security Alert - Rule {rule_id}"
+            #     msg.attach(MIMEText(message, 'plain'))
                 
-                # Attach CSV if available
-                if csv_path and os.path.exists(csv_path):
-                    with open(csv_path, 'rb') as f:
-                        part = MIMEApplication(f.read(), Name=os.path.basename(csv_path))
-                        part['Content-Disposition'] = f'attachment; filename="{os.path.basename(csv_path)}"'
-                        msg.attach(part)
+            #     # Attach CSV if available
+            #     if csv_path and os.path.exists(csv_path):
+            #         with open(csv_path, 'rb') as f:
+            #             part = MIMEApplication(f.read(), Name=os.path.basename(csv_path))
+            #             part['Content-Disposition'] = f'attachment; filename="{os.path.basename(csv_path)}"'
+            #             msg.attach(part)
                 
-                server = smtplib.SMTP("smtp.office365.com", 587)
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASS)
-                server.send_message(msg)
-                server.quit()
-                print(f"✉️ Email sent to {contact['name']} ({contact['email']}) with attachment")
-            except Exception as e:
-                print(f"Error sending email to {contact['email']}: {e}")
+            #     server = smtplib.SMTP("smtp.office365.com", 587)
+            #     server.starttls()
+            #     server.login(SMTP_USER, SMTP_PASS)
+            #     server.send_message(msg)
+            #     server.quit()
+            #     print(f"✉️ Email sent to {contact['name']} ({contact['email']}) with attachment")
+            # except Exception as e:
+            #     print(f"Error sending email to {contact['email']}: {e}")
             
             # Update the telegram part in send_notifications
             try:
@@ -579,7 +574,7 @@ async def create_incident(incident: Incident):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/incidents/{incident_id}/acknowledge")
-async def acknowledge_incident(incident_id: str):
+async def acknowledge_incident(incident_id: str, token = Depends(verify_token)):
     if incident_id not in incidents:
         raise HTTPException(status_code=404, detail="Incident not found")
     
@@ -592,18 +587,27 @@ async def acknowledge_incident(incident_id: str):
         return {"message": "Incident already escalated"}
 
 @app.get("/incidents/")
-async def list_incidents():
+async def list_incidents(token = Depends(verify_token)):
     return incidents
+
+@app.get("/incidents/{incident_id}")
+async def get_incident(incident_id: str, token = Depends(verify_token)):
+    if incident_id not in incidents:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Incident {incident_id} not found"
+        )
+    return incidents[incident_id]
 
 # escalations
 
 @app.get("/api/escalations")
-async def get_escalations():
+async def get_escalations(token = Depends(verify_token)):
     with open('escalations.json') as f:
         return json.load(f)
 
 @app.post("/api/escalations")
-async def save_escalations(escalations: dict):
+async def save_escalations(escalations: dict, token = Depends(verify_token)):
     with open('escalations.json', 'w') as f:
         json.dump(escalations, f, indent=4)
     return {"message": "Escalations saved successfully"}
@@ -611,12 +615,12 @@ async def save_escalations(escalations: dict):
 # contacts
 
 @app.get("/api/contacts")
-async def get_contacts():
+async def get_contacts(token = Depends(verify_token)):
     with open('contacts.json') as f:
         return json.load(f)
     
 @app.post("/api/contacts")
-async def create_contact(contact: dict):
+async def create_contact(contact: dict, token = Depends(verify_token)):
     with open('contacts.json', 'r+') as f:
         data = json.load(f)
         contact_id = f"contact_{len(data['contacts']) + 1}"
@@ -627,7 +631,7 @@ async def create_contact(contact: dict):
     return {"id": contact_id}
 
 @app.delete("/api/contacts/{contact_id}")
-async def delete_contact(contact_id: str):
+async def delete_contact(contact_id: str, token = Depends(verify_token)):
     with open('contacts.json', 'r+') as f:
         data = json.load(f)
         if contact_id in data['contacts']:
@@ -639,7 +643,7 @@ async def delete_contact(contact_id: str):
         raise HTTPException(status_code=404, detail="Contact not found")
     
 @app.put("/api/contacts/{contact_id}")
-async def update_contact(contact_id: str, contact: dict):
+async def update_contact(contact_id: str, contact: dict, token = Depends(verify_token)):
     with open('contacts.json', 'r+') as f:
         data = json.load(f)
         if contact_id in data['contacts']:
@@ -665,12 +669,12 @@ def save_suppressions(suppressions: dict):
         json.dump(suppressions, f, indent=2)
 
 @app.get("/api/suppressions")
-async def get_suppressions():
+async def get_suppressions(token = Depends(verify_token)):
     """Get all suppression rules"""
     return load_suppressions()
 
 @app.post("/api/suppressions")
-async def create_suppression(rule: SuppressionRule):
+async def create_suppression(rule: SuppressionRule, token = Depends(verify_token)):
     """Create new suppression rule"""
     suppressions = load_suppressions()
     
@@ -698,7 +702,7 @@ async def create_suppression(rule: SuppressionRule):
     return {"message": "Suppression rule created", "id": rule.id}
 
 @app.delete("/api/suppressions/{rule_id}")
-async def delete_suppression(rule_id: str):
+async def delete_suppression(rule_id: str, token = Depends(verify_token)):
     """Delete suppression rule"""
     suppressions = load_suppressions()
     if rule_id in suppressions:
@@ -707,9 +711,8 @@ async def delete_suppression(rule_id: str):
         return {"message": "Suppression rule deleted"}
     raise HTTPException(status_code=404, detail="Rule not found")
 
-# Add to incident_server.py
 @app.get("/api/suppressions/{rule_id}")
-async def get_suppression(rule_id: str):
+async def get_suppression(rule_id: str, token = Depends(verify_token)):
     """Get single suppression rule"""
     suppressions = load_suppressions()
     if rule_id in suppressions:
@@ -717,7 +720,7 @@ async def get_suppression(rule_id: str):
     raise HTTPException(status_code=404, detail="Suppression rule not found")
 
 @app.put("/api/suppressions/{rule_id}")
-async def update_suppression(rule_id: str, rule: SuppressionRule):
+async def update_suppression(rule_id: str, rule: SuppressionRule, token = Depends(verify_token)):
     """Update suppression rule"""
     suppressions = load_suppressions()
     if rule_id in suppressions:
@@ -742,6 +745,17 @@ async def update_suppression(rule_id: str, rule: SuppressionRule):
         save_suppressions(suppressions)
         return {"message": "Suppression rule updated"}
     raise HTTPException(status_code=404, detail="Rule not found")
+
+#login
+@app.post("/api/login")
+async def login(credentials: dict):
+    username = credentials.get("username")
+    password = credentials.get("password")
+    
+    if verify_auth(username, password):
+        token = create_access_token({"sub": username})
+        return {"token": token}
+    raise HTTPException(status_code=401, detail="Invalid credentials")
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 app.mount("/", StaticFiles(directory=".", html=True), name="static")

@@ -3,6 +3,15 @@
 
 <head>
     <title>Incident Details</title>
+    <link rel="stylesheet" href="styles.css">
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="nav-link">Incidents</a>
+            <a href="escalations.html" class="nav-link">Escalation Settings</a>
+            <a href="contacts.html" class="nav-link">Contacts</a>
+            <a href="suppressions.html" class="nav-link">Suppressions</a>
+        </div>
+    </nav>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -86,6 +95,18 @@
         }
     </style>
     <script>
+        // Add at start of script section
+        function getAuthHeaders() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+        }
         let sampleEvent = null; // Will be populated from incident details
 
         function toggleTimeRange() {
@@ -95,46 +116,56 @@
         }
 
         async function loadIncidentDetails() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const id = urlParams.get('id');
-
-            const response = await fetch('/incidents/');
-            const incidents = await response.json();
-            const incident = incidents[id];
-
-            if (!incident) {
-                document.body.innerHTML = '<h1>Incident not found</h1>';
-                return;
-            }
-
-            const details = JSON.parse(incident.description);
-            const detailsTable = document.getElementById('details');
-
-            // Add basic incident info
-            addRow('Incident ID', id);
-            addRow('Timestamp', incident.timestamp);
-            addRow('Status', incident.acknowledged ? 'Acknowledged' : incident.escalated ? 'Escalated' : 'Pending');
-
-            // Add CSV download if available
-            if (details.csv_path) {
-                addRow('CSV Export', `<a href="${details.csv_path}" class="download-btn" download>Download Events CSV</a>`);
-            }
-
-            // Add parsed details
-            for (const [key, value] of Object.entries(details)) {
-                if (key === 'csv_path') continue; // Skip csv_path as we handled it above
-                if (key === 'sample_event') {
-                    addRow(key, `<pre>${JSON.stringify(value, null, 2)}</pre>`);
-                } else if (Array.isArray(value)) {
-                    addRow(key, value.join(', '));
-                } else {
-                    addRow(key, value);
+            const incidentId = new URLSearchParams(window.location.search).get('id');
+            try {
+                const response = await fetch(`/incidents/${incidentId}`, {
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-            }
+                const incident = await response.json();
 
-            // Populate sampleEvent for suppression rule builder
-            if (details.sample_event) {
-                sampleEvent = details.sample_event;
+                if (!incident) {
+                    document.body.innerHTML = '<h1>Incident not found</h1>';
+                    return;
+                }
+
+                const details = JSON.parse(incident.description);
+                const detailsTable = document.getElementById('details');
+
+                // Add basic incident info
+                addRow('Incident ID', incidentId);
+                addRow('Timestamp', incident.timestamp);
+                addRow('Status', incident.acknowledged ? 'Acknowledged' : incident.escalated ? 'Escalated' : 'Pending');
+
+                // Add CSV download if available
+                if (details.csv_path) {
+                    addRow('CSV Export', `<a href="${details.csv_path}" class="download-btn" download>Download Events CSV</a>`);
+                }
+
+                // Add parsed details
+                for (const [key, value] of Object.entries(details)) {
+                    if (key === 'csv_path') continue; // Skip csv_path as we handled it above
+                    if (key === 'sample_event') {
+                        addRow(key, `<pre>${JSON.stringify(value, null, 2)}</pre>`);
+                    } else if (Array.isArray(value)) {
+                        addRow(key, value.join(', '));
+                    } else {
+                        addRow(key, value);
+                    }
+                }
+
+                // Populate sampleEvent for suppression rule builder
+                if (details.sample_event) {
+                    sampleEvent = details.sample_event;
+                }
+            } catch (error) {
+                console.error('Error:', error);
             }
         }
 
@@ -211,6 +242,7 @@
             button.parentElement.remove();
         }
 
+        // Update saveSuppressionRule
         async function saveSuppressionRule() {
             const isPermanent = document.getElementById('permanent-checkbox').checked;
             const timeRange = isPermanent
@@ -228,58 +260,90 @@
                 timeRange
             };
 
-
-            await fetch('/api/suppressions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(rule)
-            });
-
-            loadSuppressionRules();
-            document.getElementById('criteria-container').innerHTML = '';
-        }
-
-        async function loadSuppressionRules() {
-            const response = await fetch('/api/suppressions');
-            const rules = await response.json();
-
-            const listEl = document.getElementById('suppression-list');
-            listEl.innerHTML = '';
-
-            for (const [id, rule] of Object.entries(rules)) {
-                const ruleEl = document.createElement('div');
-                ruleEl.className = 'suppression-rule';
-
-                // Format time range display
-                let timeRangeText = '';
-                if (rule.timeRange?.permanent) {
-                    timeRangeText = 'Permanent';
-                } else if (rule.timeRange?.start && rule.timeRange?.end) {
-                    timeRangeText = `Valid from ${new Date(rule.timeRange.start).toLocaleDateString()} to ${new Date(rule.timeRange.end).toLocaleDateString()}`;
+            try {
+                const response = await fetch('/api/suppressions', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(rule)
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-
-                ruleEl.innerHTML = `
-            <h4>Rule ${id}</h4>
-            <div class="rule-criteria">
-                ${rule.criteria.map(c => `
-                    ${c.field} ${c.operator} "${c.value}"
-                    ${c.booleanOperator ? `<span>${c.booleanOperator}</span>` : ''}
-                `).join('<br>')}
-            </div>
-            <div class="rule-time">
-                <strong>Time Range:</strong> ${timeRangeText}
-            </div>
-            <button onclick="editRule('${id}')" class="btn">Edit</button>
-            <button onclick="deleteRule('${id}')" class="btn">Delete</button>
-        `;
-                listEl.appendChild(ruleEl);
+                loadSuppressionRules();
+                document.getElementById('criteria-container').innerHTML = '';
+            } catch (error) {
+                console.error('Error:', error);
             }
         }
 
+        // Update loadSuppressionRules
+        async function loadSuppressionRules() {
+            try {
+                const response = await fetch('/api/suppressions', {
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const rules = await response.json();
+
+                const listEl = document.getElementById('suppression-list');
+                listEl.innerHTML = '';
+
+                for (const [id, rule] of Object.entries(rules)) {
+                    const ruleEl = document.createElement('div');
+                    ruleEl.className = 'suppression-rule';
+
+                    // Format time range display
+                    let timeRangeText = '';
+                    if (rule.timeRange?.permanent) {
+                        timeRangeText = 'Permanent';
+                    } else if (rule.timeRange?.start && rule.timeRange?.end) {
+                        timeRangeText = `Valid from ${new Date(rule.timeRange.start).toLocaleDateString()} to ${new Date(rule.timeRange.end).toLocaleDateString()}`;
+                    }
+
+                    ruleEl.innerHTML = `
+                <h4>Rule ${id}</h4>
+                <div class="rule-criteria">
+                    ${rule.criteria.map(c => `
+                    ${c.field} ${c.operator} "${c.value}"
+                    ${c.booleanOperator ? `<span>${c.booleanOperator}</span>` : ''}
+                    `).join('<br>')}
+                </div>
+                <div class="rule-time">
+                    <strong>Time Range:</strong> ${timeRangeText}
+                </div>
+                <button onclick="editRule('${id}')" class="btn">Edit</button>
+                <button onclick="deleteRule('${id}')" class="btn">Delete</button>
+                `;
+                    listEl.appendChild(ruleEl);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Update editRule
         async function editRule(ruleId) {
             try {
-                const response = await fetch(`/api/suppressions/${ruleId}`);
-                if (!response.ok) throw new Error('Failed to fetch rule');
+                const response = await fetch(`/api/suppressions/${ruleId}`, {
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
 
                 const rule = await response.json();
 
@@ -311,12 +375,23 @@
             }
         }
 
+        // Update deleteRule 
         async function deleteRule(ruleId) {
-            if (confirm('Are you sure you want to delete this rule?')) {
-                await fetch(`/api/suppressions/${ruleId}`, {
-                    method: 'DELETE'
+            try {
+                const response = await fetch(`/api/suppressions/${ruleId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
                 });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 loadSuppressionRules();
+            } catch (error) {
+                console.error('Error:', error);
             }
         }
 
@@ -397,7 +472,13 @@
             }
         }
 
+        // Update window.onload
         window.onload = () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
             toggleTimeRange();
             loadIncidentDetails();
             loadSuppressionRules();

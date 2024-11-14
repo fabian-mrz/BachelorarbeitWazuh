@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Suppression Rules</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .suppression-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .suppression-table th,
+        .suppression-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .suppression-table th {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .criteria-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .criteria-item {
+            margin: 5px 0;
+            padding: 5px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .delete-btn {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .delete-btn:hover {
+            background-color: #d32f2f;
+        }
+
+        .time-range {
+            color: #666;
+            font-style: italic;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background: white;
+            width: 60%;
+            margin: 50px auto;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .criterion {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .form-group {
+            margin: 15px 0;
+        }
+
+        .modal-buttons {
+            margin-top: 20px;
+        }
+
+        .save-btn {
+            background: #4CAF50;
+        }
+
+        .cancel-btn {
+            background: #f44336;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="nav-link">Incidents</a>
+            <a href="escalations.html" class="nav-link">Escalation Settings</a>
+            <a href="contacts.html" class="nav-link">Contacts</a>
+            <a href="suppressions.html" class="nav-link">Suppressions</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h2>Suppression Rules</h2>
+        <button onclick="showModal()" class="btn">Add New Rule</button>
+        <table class="suppression-table" id="suppressions-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Created</th>
+                    <th>Time Range</th>
+                    <th>Criteria</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="suppressions-body">
+            </tbody>
+        </table>
+    </div>
+
+    <div id="suppressionModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>New Suppression Rule</h3>
+            <div class="form-group">
+                <label>Time Range:</label>
+                <select id="time-range-type" onchange="toggleDateInputs()">
+                    <option value="temporary">Temporary</option>
+                    <option value="permanent">Permanent</option>
+                </select>
+                
+                <div id="date-range-inputs">
+                    <label>Start:</label>
+                    <input type="date" id="range-start">
+                    <label>End:</label>
+                    <input type="date" id="range-end">
+                </div>
+            </div>
+
+            <div id="criteria-container"></div>
+            <button onclick="addCriterion()" class="btn">Add Criterion</button>
+            
+            <div class="modal-buttons">
+                <button onclick="saveSuppressionRule()" class="btn save-btn">Save</button>
+                <button onclick="closeModal()" class="btn cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getAuthHeaders() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+        }
+
+        async function loadSuppressions() {
+            try {
+                const response = await fetch('/api/suppressions', {
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const rules = await response.json();
+                displaySuppressions(rules);
+            } catch (error) {
+                console.error('Error loading suppressions:', error);
+            }
+        }
+
+        function displaySuppressions(rules) {
+            const tbody = document.getElementById('suppressions-body');
+            tbody.innerHTML = '';
+
+            for (const [id, rule] of Object.entries(rules)) {
+                const row = tbody.insertRow();
+                
+                // Format time range
+                const timeRange = rule.timeRange.permanent ? 
+                    'Permanent' : 
+                    `${rule.timeRange.start} to ${rule.timeRange.end}`;
+
+                // Format criteria
+                const criteriaHtml = rule.criteria.map(c => `
+                    <li class="criteria-item">
+                        ${c.field} ${c.operator} "${c.value}"
+                        ${c.booleanOperator ? `<span class="boolean-op">${c.booleanOperator}</span>` : ''}
+                    </li>
+                `).join('');
+
+                row.innerHTML = `
+                    <td>${rule.id}</td>
+                    <td>${new Date(rule.created).toLocaleString()}</td>
+                    <td class="time-range">${timeRange}</td>
+                    <td><ul class="criteria-list">${criteriaHtml}</ul></td>
+                    <td>
+                        <button onclick="deleteRule('${rule.id}')" class="delete-btn">Delete</button>
+                    </td>
+                `;
+            }
+        }
+
+        async function deleteRule(ruleId) {
+            if (!confirm(`Delete suppression rule ${ruleId}?`)) return;
+
+            try {
+                const response = await fetch(`/api/suppressions/${ruleId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                loadSuppressions();
+            } catch (error) {
+                console.error('Error deleting rule:', error);
+            }
+        }
+
+        window.onload = () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            loadSuppressions();
+            setActiveNavLink();
+        };
+
+        function setActiveNavLink() {
+            const currentPage = window.location.pathname.split('/').pop() || 'suppressions.html';
+            const navLinks = document.querySelectorAll('.nav-link');
+            navLinks.forEach(link => {
+                if (link.getAttribute('href') === currentPage) {
+                    link.classList.add('active');
+                }
+            });
+        }
+
+        function showModal() {
+            document.getElementById('suppressionModal').style.display = 'block';
+            addCriterion(); // Add first criterion by default
+        }
+
+        function closeModal() {
+            document.getElementById('suppressionModal').style.display = 'none';
+            document.getElementById('criteria-container').innerHTML = '';
+        }
+
+        function toggleDateInputs() {
+            const dateInputs = document.getElementById('date-range-inputs');
+            dateInputs.style.display = 
+                document.getElementById('time-range-type').value === 'permanent' ? 'none' : 'block';
+        }
+
+        function addCriterion() {
+            const container = document.getElementById('criteria-container');
+            const div = document.createElement('div');
+            div.className = 'criterion';
+            div.innerHTML = `
+                <select class="field-select">
+                    <option value="rule_id">Rule ID</option>
+                    <option value="description">Description</option>
+                    <option value="source">Source</option>
+                </select>
+                <select class="operator-select">
+                    <option value="equals">equals</option>
+                    <option value="contains">contains</option>
+                    <option value="startsWith">starts with</option>
+                    <option value="endsWith">ends with</option>
+                </select>
+                <input type="text" class="value-input" placeholder="Value">
+                <select class="boolean-op">
+                    <option value="AND">AND</option>
+                    <option value="OR">OR</option>
+                </select>
+                <button onclick="this.parentElement.remove()" class="btn">Remove</button>
+            `;
+            container.appendChild(div);
+        }
+
+        async function saveSuppressionRule() {
+            const timeRangeType = document.getElementById('time-range-type').value;
+            const timeRange = {
+                permanent: timeRangeType === 'permanent',
+                start: document.getElementById('range-start').value,
+                end: document.getElementById('range-end').value
+            };
+
+            const criteria = Array.from(document.querySelectorAll('.criterion')).map((el, index, arr) => ({
+                field: el.querySelector('.field-select').value,
+                operator: el.querySelector('.operator-select').value,
+                value: el.querySelector('.value-input').value,
+                booleanOperator: index < arr.length - 1 ? el.querySelector('.boolean-op').value : null
+            }));
+
+            const rule = {
+                id: Date.now().toString(),
+                created: new Date().toISOString(),
+                criteria,
+                timeRange
+            };
+
+            try {
+                const response = await fetch('/api/suppressions', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(rule)
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                closeModal();
+                loadSuppressions();
+            } catch (error) {
+                console.error('Error saving rule:', error);
+            }
+        }
+    </script>
+</body>
+</html>

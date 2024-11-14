@@ -80,6 +80,7 @@
             <a href="index.html" class="nav-link">Incidents</a>
             <a href="escalations.html" class="nav-link">Escalation Settings</a>
             <a href="contacts.html" class="nav-link">Contacts</a>
+            <a href="suppressions.html" class="nav-link">Suppressions</a>
         </div>
     </nav>
 
@@ -161,33 +162,36 @@
     </div>
 
     <script>
-        let contacts = {};
+        function getAuthHeaders() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+        }
 
         async function loadContacts() {
             try {
-                const response = await fetch('/api/contacts');
+                const response = await fetch('/api/contacts', {
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 const data = await response.json();
                 contacts = data.contacts;
                 renderContacts();
             } catch (error) {
                 console.error('Error loading contacts:', error);
             }
-        }
-
-        function renderContacts() {
-            const tbody = document.getElementById('contactsTableBody');
-            tbody.innerHTML = Object.entries(contacts).map(([id, contact]) => `
-                <tr>
-                    <td>${contact.name}</td>
-                    <td>${contact.email}</td>
-                    <td>${contact.phone}</td>
-                    <td>${contact.department}</td>
-                    <td>${contact.role}</td>
-                    <td>
-                        <button onclick="deleteContact('${id}')" class="delete-btn">Delete</button>
-                    </td>
-                </tr>
-            `).join('');
         }
 
         async function saveContact() {
@@ -203,15 +207,20 @@
             try {
                 const response = await fetch('/api/contacts', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify(newContact)
                 });
 
-                if (response.ok) {
-                    form.reset();
-                    await loadContacts();
-                    alert('Contact saved successfully!');
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                form.reset();
+                await loadContacts();
+                alert('Contact saved successfully!');
             } catch (error) {
                 console.error('Error saving contact:', error);
                 alert('Error saving contact');
@@ -225,13 +234,19 @@
 
             try {
                 const response = await fetch(`/api/contacts/${id}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
                 });
 
-                if (response.ok) {
-                    await loadContacts();
-                    alert('Contact deleted successfully!');
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                await loadContacts();
+                alert('Contact deleted successfully!');
             } catch (error) {
                 console.error('Error deleting contact:', error);
                 alert('Error deleting contact');
@@ -276,40 +291,49 @@
             try {
                 const response = await fetch(`/api/contacts/${id}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify(updatedContact)
                 });
 
-                if (response.ok) {
-                    closeEditModal();
-                    await loadContacts();
-                    alert('Contact updated successfully!');
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                closeEditModal();
+                await loadContacts();
+                alert('Contact updated successfully!');
             } catch (error) {
                 console.error('Error updating contact:', error);
                 alert('Error updating contact');
             }
         }
 
-        // Update the renderContacts function to include edit button
         function renderContacts() {
             const tbody = document.getElementById('contactsTableBody');
             tbody.innerHTML = Object.entries(contacts).map(([id, contact]) => `
-        <tr>
-            <td>${contact.name}</td>
-            <td>${contact.email}</td>
-            <td>${contact.phone}</td>
-            <td>${contact.department}</td>
-            <td>${contact.role}</td>
-            <td>
-                <button onclick="openEditModal('${id}')" class="edit-btn">Edit</button>
-                <button onclick="deleteContact('${id}')" class="delete-btn">Delete</button>
-            </td>
-        </tr>
-    `).join('');
+                <tr>
+                    <td>${contact.name}</td>
+                    <td>${contact.email}</td>
+                    <td>${contact.phone}</td>
+                    <td>${contact.department}</td>
+                    <td>${contact.role}</td>
+                    <td>
+                        <button onclick="openEditModal('${id}')" class="edit-btn">Edit</button>
+                        <button onclick="deleteContact('${id}')" class="delete-btn">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
         }
 
         window.onload = function () {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
             loadContacts();
             setActiveNavLink();
         };
