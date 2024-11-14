@@ -219,6 +219,7 @@ TEMPLATES_DIR = './templates'
 DEFAULT_TEMPLATE_PATH = os.path.join(TEMPLATES_DIR, 'default.json')
 # Set output directory
 OUTPUT_DIR = Path('/var/ossec/integrations')
+SUPPRESSIONS_FILE = Path("suppressions.json")
 
 #telegram
 config = configparser.ConfigParser()
@@ -257,6 +258,25 @@ class Incident(BaseModel):
     acknowledged_by: str = None
     escalated: bool = False
     update_count: int = 0  # Add counter for updates
+
+
+# Update models in incident_server.py
+class TimeRange(BaseModel):
+    permanent: bool = False
+    start: Optional[str] = None
+    end: Optional[str] = None
+
+class SuppressionCriterion(BaseModel):
+    field: str
+    operator: str
+    value: str
+    booleanOperator: Optional[str] = None
+
+class SuppressionRule(BaseModel):
+    id: str
+    created: str
+    criteria: List[SuppressionCriterion]
+    timeRange: TimeRange
 
 async def handle_incident_timer(incident_id: str):
     await asyncio.sleep(60)
@@ -531,6 +551,8 @@ async def make_phone_call(contact: dict, message: str) -> bool:
 
 ### routes
 
+# incidents
+
 @app.post("/incidents/")
 async def create_incident(incident: Incident):
     try:
@@ -573,6 +595,8 @@ async def acknowledge_incident(incident_id: str):
 async def list_incidents():
     return incidents
 
+# escalations
+
 @app.get("/api/escalations")
 async def get_escalations():
     with open('escalations.json') as f:
@@ -583,6 +607,8 @@ async def save_escalations(escalations: dict):
     with open('escalations.json', 'w') as f:
         json.dump(escalations, f, indent=4)
     return {"message": "Escalations saved successfully"}
+
+# contacts
 
 @app.get("/api/contacts")
 async def get_contacts():
@@ -623,6 +649,91 @@ async def update_contact(contact_id: str, contact: dict):
             f.truncate()
             return {"message": "Contact updated"}
         raise HTTPException(status_code=404, detail="Contact not found")
+    
+# suppression
+# Add helper functions
+def load_suppressions() -> dict:
+    """Load suppressions from file"""
+    if not SUPPRESSIONS_FILE.exists():
+        return {}
+    with open(SUPPRESSIONS_FILE) as f:
+        return json.load(f)
+
+def save_suppressions(suppressions: dict):
+    """Save suppressions to file"""
+    with open(SUPPRESSIONS_FILE, 'w') as f:
+        json.dump(suppressions, f, indent=2)
+
+@app.get("/api/suppressions")
+async def get_suppressions():
+    """Get all suppression rules"""
+    return load_suppressions()
+
+@app.post("/api/suppressions")
+async def create_suppression(rule: SuppressionRule):
+    """Create new suppression rule"""
+    suppressions = load_suppressions()
+    
+    # Convert to dict and ensure proper structure
+    rule_dict = {
+        "id": rule.id,
+        "created": rule.created,
+        "timeRange": {
+            "permanent": rule.timeRange.permanent,
+            "start": rule.timeRange.start if not rule.timeRange.permanent else None,
+            "end": rule.timeRange.end if not rule.timeRange.permanent else None
+        },
+        "criteria": [
+            {
+                "field": c.field,
+                "operator": c.operator,
+                "value": c.value,
+                "booleanOperator": c.booleanOperator
+            } for c in rule.criteria
+        ]
+    }
+    
+    suppressions[rule.id] = rule_dict
+    save_suppressions(suppressions)
+    return {"message": "Suppression rule created", "id": rule.id}
+
+@app.delete("/api/suppressions/{rule_id}")
+async def delete_suppression(rule_id: str):
+    """Delete suppression rule"""
+    suppressions = load_suppressions()
+    if rule_id in suppressions:
+        del suppressions[rule_id]
+        save_suppressions(suppressions)
+        return {"message": "Suppression rule deleted"}
+    raise HTTPException(status_code=404, detail="Rule not found")
+
+@app.put("/api/suppressions/{rule_id}")
+async def update_suppression(rule_id: str, rule: SuppressionRule):
+    """Update suppression rule"""
+    suppressions = load_suppressions()
+    if rule_id in suppressions:
+        # Use same structure as create
+        rule_dict = {
+            "id": rule.id,
+            "created": rule.created,
+            "timeRange": {
+                "permanent": rule.timeRange.permanent,
+                "start": rule.timeRange.start if not rule.timeRange.permanent else None,
+                "end": rule.timeRange.end if not rule.timeRange.permanent else None
+            },
+            "criteria": [
+                {
+                    "field": c.field,
+                    "operator": c.operator,
+                    "value": c.value,
+                    "booleanOperator": c.booleanOperator
+                } for c in rule.criteria
+            ]
+        }
+        suppressions[rule_id] = rule_dict
+        save_suppressions(suppressions)
+        return {"message": "Suppression rule updated"}
+    raise HTTPException(status_code=404, detail="Rule not found")
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
