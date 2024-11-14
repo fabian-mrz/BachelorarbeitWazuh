@@ -1,5 +1,5 @@
 # incident_server.py
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Security, status
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from datetime import datetime
@@ -20,7 +20,9 @@ from pathlib import Path
 import wave
 import threading
 import re
-from auth import verify_auth, create_access_token, verify_token
+from auth import verify_auth, create_access_token, get_db, verify_token
+from sqlalchemy.orm import Session
+import uvicorn
 
 
 
@@ -746,20 +748,24 @@ async def update_suppression(rule_id: str, rule: SuppressionRule, token = Depend
         return {"message": "Suppression rule updated"}
     raise HTTPException(status_code=404, detail="Rule not found")
 
-#login
+# Login endpoint with database dependency
 @app.post("/api/login")
-async def login(credentials: dict):
+async def login(credentials: dict, db: Session = Depends(get_db)):
     username = credentials.get("username")
     password = credentials.get("password")
     
     if verify_auth(username, password):
         token = create_access_token({"sub": username})
         return {"token": token}
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
+# Mount static files - simplified to avoid conflicts
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

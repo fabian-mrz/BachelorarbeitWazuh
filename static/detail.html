@@ -10,6 +10,7 @@
             <a href="escalations.html" class="nav-link">Escalation Settings</a>
             <a href="contacts.html" class="nav-link">Contacts</a>
             <a href="suppressions.html" class="nav-link">Suppressions</a>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
         </div>
     </nav>
     <style>
@@ -92,6 +93,25 @@
 
         .operator-select {
             margin: 0 10px;
+        }
+        .logout-btn {
+            background-color: #ff4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-left: auto;
+            transition: background-color 0.3s;
+        }
+
+        .logout-btn:hover {
+            background-color: #cc0000;
+        }
+
+        .nav-container {
+            display: flex;
+            align-items: center;
         }
     </style>
     <script>
@@ -471,6 +491,12 @@
                 alert('Failed to update suppression rule');
             }
         }
+        document.getElementById('logoutBtn').addEventListener('click', function() {
+            // Clear authentication token
+            localStorage.removeItem('token');
+            // Redirect to login page
+            window.location.href = 'login.html';
+        });
 
         // Update window.onload
         window.onload = () => {
