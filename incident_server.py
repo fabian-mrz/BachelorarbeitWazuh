@@ -707,12 +707,20 @@ async def delete_suppression(rule_id: str):
         return {"message": "Suppression rule deleted"}
     raise HTTPException(status_code=404, detail="Rule not found")
 
+# Add to incident_server.py
+@app.get("/api/suppressions/{rule_id}")
+async def get_suppression(rule_id: str):
+    """Get single suppression rule"""
+    suppressions = load_suppressions()
+    if rule_id in suppressions:
+        return suppressions[rule_id]
+    raise HTTPException(status_code=404, detail="Suppression rule not found")
+
 @app.put("/api/suppressions/{rule_id}")
 async def update_suppression(rule_id: str, rule: SuppressionRule):
     """Update suppression rule"""
     suppressions = load_suppressions()
     if rule_id in suppressions:
-        # Use same structure as create
         rule_dict = {
             "id": rule.id,
             "created": rule.created,

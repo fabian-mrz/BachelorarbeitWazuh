@@ -277,29 +277,38 @@
         }
 
         async function editRule(ruleId) {
-            const response = await fetch(`/api/suppressions/${ruleId}`);
-            const rule = await response.json();
+            try {
+                const response = await fetch(`/api/suppressions/${ruleId}`);
+                if (!response.ok) throw new Error('Failed to fetch rule');
 
-            // Clear existing criteria
-            document.getElementById('criteria-container').innerHTML = '';
+                const rule = await response.json();
 
-            // Load criteria
-            rule.criteria.forEach(criterion => {
-                const el = createCriterionElement(criterion);
-                document.getElementById('criteria-container').appendChild(el);
-            });
+                // Clear existing criteria
+                document.getElementById('criteria-container').innerHTML = '';
 
-            // Set time range
-            document.getElementById('time-range-type').value =
-                rule.timeRange?.permanent ? 'permanent' : 'range';
-            if (!rule.timeRange?.permanent) {
-                document.getElementById('range-start').value = rule.timeRange?.start || '';
-                document.getElementById('range-end').value = rule.timeRange?.end || '';
+                // Load criteria
+                rule.criteria.forEach(criterion => {
+                    const el = createCriterionElement(criterion);
+                    document.getElementById('criteria-container').appendChild(el);
+                });
+
+                // Set time range
+                document.getElementById('permanent-checkbox').checked = rule.timeRange?.permanent || false;
+                toggleTimeRange();
+
+                if (!rule.timeRange?.permanent) {
+                    document.getElementById('range-start').value = rule.timeRange?.start || '';
+                    document.getElementById('range-end').value = rule.timeRange?.end || '';
+                }
+
+                // Update save button to handle update
+                const saveBtn = document.querySelector('#suppression-builder button:last-child');
+                saveBtn.textContent = 'Update Rule';
+                saveBtn.onclick = () => updateRule(ruleId);
+            } catch (error) {
+                console.error('Error editing suppression rule:', error);
+                alert('Failed to load suppression rule');
             }
-
-            // Update save button to handle update
-            const saveBtn = document.querySelector('#suppression-builder button:last-child');
-            saveBtn.onclick = () => updateRule(ruleId);
         }
 
         async function deleteRule(ruleId) {
@@ -350,29 +359,42 @@
         }
 
         async function updateRule(ruleId) {
-            const timeRangeType = document.getElementById('time-range-type').value;
-            const timeRange = timeRangeType === 'permanent'
+            const timeRange = document.getElementById('permanent-checkbox').checked
                 ? { permanent: true }
                 : {
+                    permanent: false,
                     start: document.getElementById('range-start').value,
                     end: document.getElementById('range-end').value
                 };
 
             const rule = {
                 id: ruleId,
-                updated: new Date().toISOString(),
+                created: new Date().toISOString(),
                 criteria: buildCriteria(),
                 timeRange
             };
 
-            await fetch(`/api/suppressions/${ruleId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(rule)
-            });
+            try {
+                const response = await fetch(`/api/suppressions/${ruleId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(rule)
+                });
 
-            loadSuppressionRules();
-            document.getElementById('criteria-container').innerHTML = '';
+                if (response.ok) {
+                    loadSuppressionRules();
+                    // Reset form
+                    document.getElementById('criteria-container').innerHTML = '';
+                    document.getElementById('permanent-checkbox').checked = false;
+                    document.getElementById('range-start').value = '';
+                    document.getElementById('range-end').value = '';
+                } else {
+                    throw new Error('Failed to update rule');
+                }
+            } catch (error) {
+                console.error('Error updating suppression rule:', error);
+                alert('Failed to update suppression rule');
+            }
         }
 
         window.onload = () => {
@@ -397,17 +419,17 @@
                 <label>
                     <input type="checkbox" id="permanent-checkbox" onchange="toggleTimeRange()">
                     Permanent Suppression
-            </label>
-            
-            <div id="date-range-inputs">
-                <input type="date" id="range-start">
-                <input type="date" id="range-end">
-            </div>
+                </label>
+
+                <div id="date-range-inputs">
+                    <input type="date" id="range-start">
+                    <input type="date" id="range-end">
+                </div>
             </div>
             <button onclick="addCriterion()" class="btn">Add Criterion</button>
             <button onclick="saveSuppressionRule()" class="btn">Save Rule</button>
-            </div>
-            </div>
-            </body>
+        </div>
+    </div>
+</body>
 
 </html>
