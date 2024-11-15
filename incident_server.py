@@ -23,6 +23,7 @@ import re
 from auth import verify_auth, create_access_token, get_db, verify_token, is_admin
 from sqlalchemy.orm import Session
 import uvicorn
+from typing import Dict
 
 
 
@@ -618,7 +619,7 @@ async def save_escalations(escalations: dict, token = Depends(verify_token)):
 
 # Example protected endpoint
 @app.get("/api/contacts")
-async def get_contacts(admin_user = Depends(is_admin)):
+async def get_contacts(token = Depends(verify_token)):
     with open('contacts.json') as f:
         return json.load(f)
     
@@ -763,6 +764,63 @@ async def login(credentials: dict, db: Session = Depends(get_db)):
         detail="Invalid credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+### settings.html
+# Config handling functions
+def read_config() -> Dict:
+    try:
+        config.read('config.ini')
+        return {
+            "telegram": {
+                "CHAT_ID": str(config['telegram']['CHAT_ID']),
+                "BOT_TOKEN": config['telegram']['BOT_TOKEN']
+            },
+            "smtp": dict(config['SMTP']),
+            "sip": dict(config['SIP'])
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading config: {str(e)}")
+
+def save_config(settings: Dict):
+    config['telegram'] = {
+        'CHAT_ID': settings['telegram']['CHAT_ID'],
+        'BOT_TOKEN': settings['telegram']['BOT_TOKEN']
+    }
+    
+    config['SMTP'] = {
+        'server': settings['smtp']['server'],
+        'port': str(settings['smtp']['port']),
+        'username': settings['smtp']['username'],
+        'password': settings['smtp']['password'],
+        'from': settings['smtp']['from']
+    }
+    
+    config['SIP'] = {
+        'username': settings['sip']['username'],
+        'password': settings['sip']['password'],
+        'host': settings['sip']['host']
+    }
+    
+    try:
+        with open('config.ini', 'w') as f:
+            config.write(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving config: {str(e)}")
+
+# API Endpoints
+@app.get("/settings")
+async def get_settings(admin_user = Depends(is_admin)):
+    """Get all settings from config.ini"""
+    return read_config()
+
+@app.post("/settings")
+async def update_settings(settings: Dict, admin_user = Depends(is_admin)):
+    """Update settings in config.ini"""
+    try:
+        save_config(settings)
+        return {"message": "Settings updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Mount static files - simplified to avoid conflicts
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

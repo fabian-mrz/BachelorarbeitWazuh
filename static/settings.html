@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>[Page Title] - Incident Manager</title>
+    <link rel="stylesheet" href="styles.css">
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="nav-link">Incidents</a>
+            <a href="escalations.html" class="nav-link">Escalation Settings</a>
+            <a href="contacts.html" class="nav-link">Contacts</a>
+            <a href="suppressions.html" class="nav-link">Suppressions</a>
+            <a href="settings.html" class="nav-link">Settings</a>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </div>
+    </nav>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .config-section {
+            background-color: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .config-group {
+            margin: 15px 0;
+        }
+
+        label {
+            display: inline-block;
+            width: 120px;
+            font-weight: bold;
+        }
+
+        input {
+            width: 300px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            background-color: #45a049;
+        }
+
+        .logout-btn {
+            background-color: #ff4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-left: auto;
+            transition: background-color 0.3s;
+        }
+
+        .logout-btn:hover {
+            background-color: #cc0000;
+        }
+
+
+
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            margin: 0 5px;
+        }
+
+        .nav-link:hover {
+            background-color: #45a049;
+            border-radius: 4px;
+        }
+
+        h1 {
+            color: #333;
+            margin: 20px 0;
+        }
+
+        .save-btn {
+            background-color: #2196F3;
+            margin-top: 20px;
+        }
+
+        .save-btn:hover {
+            background-color: #1976D2;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>System Settings</h1>
+
+    <div id="settingsForm">
+        <div class="config-section">
+            <h2>Telegram Settings</h2>
+            <div class="config-group">
+                <label>Chat ID:</label>
+                <input type="text" id="telegram_chat_id">
+            </div>
+            <div class="config-group">
+                <label>Bot Token:</label>
+                <input type="password" id="telegram_bot_token">
+            </div>
+        </div>
+
+        <div class="config-section">
+            <h2>SMTP Settings</h2>
+            <div class="config-group">
+                <label>Server:</label>
+                <input type="text" id="smtp_server">
+            </div>
+            <div class="config-group">
+                <label>Port:</label>
+                <input type="number" id="smtp_port">
+            </div>
+            <div class="config-group">
+                <label>Username:</label>
+                <input type="text" id="smtp_username">
+            </div>
+            <div class="config-group">
+                <label>Password:</label>
+                <input type="password" id="smtp_password">
+            </div>
+            <div class="config-group">
+                <label>From:</label>
+                <input type="email" id="smtp_from">
+            </div>
+        </div>
+
+        <div class="config-section">
+            <h2>SIP Settings</h2>
+            <div class="config-group">
+                <label>Username:</label>
+                <input type="text" id="sip_username">
+            </div>
+            <div class="config-group">
+                <label>Password:</label>
+                <input type="password" id="sip_password">
+            </div>
+            <div class="config-group">
+                <label>Host:</label>
+                <input type="text" id="sip_host">
+            </div>
+        </div>
+
+        <button onclick="saveSettings()" class="btn save-btn">Save Settings</button>
+    </div>
+
+    <script>
+        async function loadSettings() {
+            try {
+                const response = await fetch('/settings', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const settings = await response.json();
+
+                // Populate form fields
+                document.getElementById('telegram_chat_id').value = settings.telegram.CHAT_ID;
+                document.getElementById('telegram_bot_token').value = settings.telegram.BOT_TOKEN;
+
+                document.getElementById('smtp_server').value = settings.smtp.server;
+                document.getElementById('smtp_port').value = settings.smtp.port;
+                document.getElementById('smtp_username').value = settings.smtp.username;
+                document.getElementById('smtp_password').value = settings.smtp.password;
+                document.getElementById('smtp_from').value = settings.smtp.from;
+
+                document.getElementById('sip_username').value = settings.sip.username;
+                document.getElementById('sip_password').value = settings.sip.password;
+                document.getElementById('sip_host').value = settings.sip.host;
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        }
+
+        async function saveSettings() {
+            const settings = {
+                telegram: {
+                    CHAT_ID: document.getElementById('telegram_chat_id').value,
+                    BOT_TOKEN: document.getElementById('telegram_bot_token').value
+                },
+                smtp: {
+                    server: document.getElementById('smtp_server').value,
+                    port: document.getElementById('smtp_port').value,
+                    username: document.getElementById('smtp_username').value,
+                    password: document.getElementById('smtp_password').value,
+                    from: document.getElementById('smtp_from').value
+                },
+                sip: {
+                    username: document.getElementById('sip_username').value,
+                    password: document.getElementById('sip_password').value,
+                    host: document.getElementById('sip_host').value
+                }
+            };
+
+            try {
+                const response = await fetch('/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify(settings)
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                alert('Settings saved successfully!');
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                alert('Error saving settings');
+            }
+        }
+
+        document.getElementById('logoutBtn').addEventListener('click', function () {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+        });
+
+        window.onload = function () {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            loadSettings();
+        };
+    </script>
+</body>
+
+</html>
