@@ -20,7 +20,7 @@ from pathlib import Path
 import wave
 import threading
 import re
-from auth import verify_auth, create_access_token, get_db, verify_token
+from auth import verify_auth, create_access_token, get_db, verify_token, is_admin
 from sqlalchemy.orm import Session
 import uvicorn
 
@@ -616,8 +616,9 @@ async def save_escalations(escalations: dict, token = Depends(verify_token)):
 
 # contacts
 
+# Example protected endpoint
 @app.get("/api/contacts")
-async def get_contacts(token = Depends(verify_token)):
+async def get_contacts(admin_user = Depends(is_admin)):
     with open('contacts.json') as f:
         return json.load(f)
     

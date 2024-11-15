@@ -10,6 +10,8 @@ import logging
 from sqlalchemy.orm import Session
 from jwt import ExpiredSignatureError, InvalidTokenError  # Updated imports
 import jwt
+from functools import wraps
+from fastapi import Depends
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./users.db"
@@ -25,6 +27,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     password_hash = Column(String)
+    role = Column(String)  # Changed from Enum to String
 
 Base.metadata.create_all(bind=engine)
 
@@ -79,6 +82,17 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+def is_admin(token = Depends(verify_token)):
+    db = next(get_db())
+    user = db.query(User).filter(User.username == token.get("sub")).first()
+    if not user or user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admin privileges required"
+        )
+    return user
+
 
 def verify_auth(username: str, password: str):
     db = next(get_db())
@@ -87,12 +101,23 @@ def verify_auth(username: str, password: str):
         return False
     return verify_password(password, user.password_hash)
 
-def register_user(username: str, password: str):
+def register_user(username: str, password: str, role: str = None):
     db = next(get_db())
+    
+    # Validate role as string
+    valid_roles = ["admin", "analyst"]
+    if role not in valid_roles:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'admin' or 'analyst'")
+    
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="Username already registered")
     
-    user = User(username=username, password_hash=get_password_hash(password))
+    # Create user with string role
+    user = User(
+        username=username,
+        password_hash=get_password_hash(password),
+        role=role  # Will store as plain string
+    )
     db.add(user)
     db.commit()
     return user
