@@ -403,15 +403,20 @@ async def send_notifications(incident_id: str):
                 
                 # Make phone calls with await
                 for contact_id in phase['contacts']:
-                    print(f"📞 Calling {contacts[contact_id]['name']} ({contacts[contact_id]['phone']})")
-                    contact = contacts[contact_id]
-                    ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknoledge and 5 to skip. {message}")
-                    if ack:
-                        incidents[incident_id].acknowledged = True
-                        incidents[incident_id].acknowledged_by = contact['name']
-                        print(f"✅ Incident {incident_id} acknowledged by {contact['name']}")
-                        return
-                    
+                    try:
+                        
+                        print(f"📞 Calling {contacts[contact_id]['name']} ({contacts[contact_id]['phone']})")
+                        contact = contacts[contact_id]
+                        ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknoledge and 5 to skip. {message}")
+                        if ack:
+                            incidents[incident_id].acknowledged = True
+                            incidents[incident_id].acknowledged_by = contact['name']
+                            print(f"✅ Incident {incident_id} acknowledged by {contact['name']}")
+                            return
+                    except Exception as e:
+                        print(f"Error making phone call: {e}")
+                        continue    
+                        
                                   
 
 
@@ -617,11 +622,18 @@ async def save_escalations(escalations: dict, token = Depends(verify_token)):
 
 # contacts
 
-# Example protected endpoint
 @app.get("/api/contacts")
 async def get_contacts(token = Depends(verify_token)):
-    with open('contacts.json') as f:
-        return json.load(f)
+    try:
+        print(f"Token received: {token}")  # Debug logging
+        with open('contacts.json') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error getting contacts: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving contacts: {str(e)}"
+        )
     
 @app.post("/api/contacts")
 async def create_contact(contact: dict, token = Depends(verify_token)):

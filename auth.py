@@ -12,6 +12,22 @@ from jwt import ExpiredSignatureError, InvalidTokenError  # Updated imports
 import jwt
 from functools import wraps
 from fastapi import Depends
+import time
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Optional: Add file handler to also log to a file
+file_handler = logging.FileHandler('auth.log')
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./users.db"
@@ -32,7 +48,7 @@ class User(Base):
 Base.metadata.create_all(bind=engine)
 
 # JWT Configuration
-SECRET_KEY = "test"
+SECRET_KEY = "asdasdfljnasdkfaljkdflkasfawe8"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -63,20 +79,38 @@ def create_access_token(data: dict):
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     try:
+        # Log full credentials object
+        logger.debug(f"Received credentials object: {credentials}")
+        logger.debug(f"Authorization scheme: {credentials.scheme}")
+        
         token = credentials.credentials
-        logger.debug(f"Verifying token: {token}")
+        logger.debug(f"Attempting to verify token: {token[:10]}...") # Show first 10 chars only
+        
+        # Log key verification details
+        logger.debug(f"Using SECRET_KEY (first 4 chars): {SECRET_KEY[:4]}...")
+        logger.debug(f"Using algorithm: {ALGORITHM}")
+        
+        start_time = time.time()
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        decode_time = time.time() - start_time
+        
+        logger.debug(f"Token decoded successfully in {decode_time:.2f}s")
         logger.debug(f"Token payload: {payload}")
+        logger.debug(f"Token expiry: {payload.get('exp')}")
         return payload
-    except ExpiredSignatureError:
-        logger.error("Token has expired")
+        
+    except ExpiredSignatureError as e:
+        logger.error(f"Token expired: {str(e)}")
+        logger.error(f"Token expiry details: {e.__dict__}")
         raise HTTPException(
             status_code=401,
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except InvalidTokenError as e:
-        logger.error(f"Invalid token: {str(e)}")
+        logger.error(f"Invalid token error: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error details: {e.__dict__}")
         raise HTTPException(
             status_code=401,
             detail="Could not validate credentials",

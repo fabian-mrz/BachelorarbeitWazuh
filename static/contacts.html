@@ -71,6 +71,7 @@
             background-color: #2196F3;
             margin-right: 5px;
         }
+
         .logout-btn {
             background-color: #ff4444;
             color: white;
@@ -196,21 +197,32 @@
 
         async function loadContacts() {
             try {
+                const headers = getAuthHeaders();
+                console.log('Request headers:', headers); // Debug logging
+
                 const response = await fetch('/api/contacts', {
-                    headers: getAuthHeaders()
+                    headers: headers
                 });
+
+                console.log('Response status:', response.status); // Debug logging
+
                 if (!response.ok) {
                     if (response.status === 401 || response.status === 403) {
+                        console.log('Authentication error'); // Debug logging
                         window.location.href = '/login.html';
                         return;
                     }
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText); // Debug logging
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
                 }
+
                 const data = await response.json();
                 contacts = data.contacts;
                 renderContacts();
             } catch (error) {
                 console.error('Error loading contacts:', error);
+                alert(`Error loading contacts: ${error.message}`);
             }
         }
 
@@ -347,7 +359,7 @@
                 </tr>
             `).join('');
         }
-        document.getElementById('logoutBtn').addEventListener('click', function() {
+        document.getElementById('logoutBtn').addEventListener('click', function () {
             // Clear authentication token
             localStorage.removeItem('token');
             // Redirect to login page

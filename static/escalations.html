@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Escalation Settings</title>
     <link rel="stylesheet" href="styles.css">
@@ -9,25 +10,30 @@
             padding: 15px;
             margin: 10px 0;
             border-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
+
         .contact-select {
             width: 100%;
             padding: 8px;
             margin: 5px 0;
         }
+
         .phase-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
+
         .delay-input {
             width: 80px;
             padding: 5px;
         }
+
         .selected-contacts {
             margin: 10px 0;
         }
+
         .contact-chip {
             background: #e0e0e0;
             padding: 5px 10px;
@@ -35,11 +41,13 @@
             border-radius: 15px;
             display: inline-block;
         }
+
         .remove-contact {
             margin-left: 5px;
             cursor: pointer;
             color: red;
         }
+
         .logout-btn {
             background-color: #ff4444;
             color: white;
@@ -61,6 +69,7 @@
         }
     </style>
 </head>
+
 <body>
     <nav class="navbar">
         <div class="nav-container">
@@ -122,38 +131,86 @@
 
         async function loadContacts() {
             try {
+                const headers = getAuthHeaders();
+                console.log('Contact request headers:', headers);
+
                 const response = await fetch('/api/contacts', {
-                    headers: getAuthHeaders()
+                    method: 'GET',
+                    headers: headers
                 });
+
+                console.log('Contacts response status:', response.status);
+
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Contacts error response:', errorText);
+
                     if (response.status === 401 || response.status === 403) {
+                        console.log('Authentication failed - redirecting to login');
+                        localStorage.removeItem('token');
                         window.location.href = '/login.html';
                         return;
                     }
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
                 }
-                contactsData = await response.json();
+
+                const data = await response.json();
+                console.log('Contacts data received:', data);
+
+                if (!data) {
+                    throw new Error('No contacts data received');
+                }
+
+                contactsData = data;
+                return contactsData;
+
             } catch (error) {
                 console.error('Error loading contacts:', error);
+                showError(`Failed to load contacts: ${error.message}`);
+                throw error;
             }
         }
 
         async function loadEscalations() {
             try {
+                const headers = getAuthHeaders();
+                console.log('Escalations request headers:', headers);
+
                 const response = await fetch('/api/escalations', {
-                    headers: getAuthHeaders()
+                    method: 'GET',
+                    headers: headers
                 });
+
+                console.log('Escalations response status:', response.status);
+
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Escalations error response:', errorText);
+
                     if (response.status === 401 || response.status === 403) {
+                        console.log('Authentication failed - redirecting to login');
+                        localStorage.removeItem('token');
                         window.location.href = '/login.html';
                         return;
                     }
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
                 }
-                escalationsData = await response.json();
+
+                const data = await response.json();
+                console.log('Escalations data received:', data);
+
+                if (!data) {
+                    throw new Error('No escalations data received');
+                }
+
+                escalationsData = data;
                 renderEscalations();
+                return escalationsData;
+
             } catch (error) {
                 console.error('Error loading escalations:', error);
+                showError(`Failed to load escalations: ${error.message}`);
+                throw error;
             }
         }
 
@@ -181,15 +238,15 @@
                     </select>
                     <div class="selected-contacts">
                         ${phase.contacts.map(contactId => {
-                            const contact = contactsData.contacts[contactId];
-                            return `
+                const contact = contactsData.contacts[contactId];
+                return `
                                 <span class="contact-chip">
                                     ${contact.name}
                                     <span class="remove-contact" 
                                           onclick="removeContact('${ruleId}', ${phaseIndex}, '${contactId}')">×</span>
                                 </span>
                             `;
-                        }).join('')}
+            }).join('')}
                     </div>
                 </div>
             `;
@@ -208,9 +265,9 @@
                 .map(([ruleId, rule]) => `
                     <div class="settings-section">
                         <h4>Rule ${ruleId}</h4>
-                        ${rule.phases.map((phase, index) => 
-                            createPhaseHTML(phase, index, ruleId)
-                        ).join('')}
+                        ${rule.phases.map((phase, index) =>
+                    createPhaseHTML(phase, index, ruleId)
+                ).join('')}
                         <button onclick="deleteRule('${ruleId}')" class="delete-btn">Delete Rule</button>
                     </div>
                 `).join('');
@@ -218,11 +275,11 @@
 
         function addContact(ruleId, phaseIndex, contactId) {
             if (!contactId) return;
-            
-            const target = ruleId === 'default' ? 
-                escalationsData.default : 
+
+            const target = ruleId === 'default' ?
+                escalationsData.default :
                 escalationsData.rules[ruleId];
-            
+
             if (!target.phases[phaseIndex].contacts.includes(contactId)) {
                 target.phases[phaseIndex].contacts.push(contactId);
                 renderEscalations();
@@ -230,20 +287,20 @@
         }
 
         function removeContact(ruleId, phaseIndex, contactId) {
-            const target = ruleId === 'default' ? 
-                escalationsData.default : 
+            const target = ruleId === 'default' ?
+                escalationsData.default :
                 escalationsData.rules[ruleId];
-            
+
             target.phases[phaseIndex].contacts = target.phases[phaseIndex].contacts
                 .filter(id => id !== contactId);
             renderEscalations();
         }
 
         function updateDelay(ruleId, phaseIndex, delay) {
-            const target = ruleId === 'default' ? 
-                escalationsData.default : 
+            const target = ruleId === 'default' ?
+                escalationsData.default :
                 escalationsData.rules[ruleId];
-            
+
             target.phases[phaseIndex].delay = parseInt(delay) || 0;
         }
 
@@ -297,14 +354,23 @@
                 }
             });
         }
-        document.getElementById('logoutBtn').addEventListener('click', function() {
+        document.getElementById('logoutBtn').addEventListener('click', function () {
             // Clear authentication token
             localStorage.removeItem('token');
             // Redirect to login page
             window.location.href = 'login.html';
         });
 
-        window.onload = async function() {
+        // Helper function to show errors
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message') || document.createElement('div');
+            errorDiv.id = 'error-message';
+            errorDiv.style.color = 'red';
+            errorDiv.textContent = message;
+            document.querySelector('main').prepend(errorDiv);
+        }
+
+        window.onload = async function () {
             const token = localStorage.getItem('token');
             if (!token) {
                 window.location.href = '/login.html';
@@ -316,4 +382,5 @@
         };
     </script>
 </body>
+
 </html>
