@@ -36,18 +36,6 @@
             border-radius: 4px;
         }
 
-        .delete-btn {
-            background-color: #f44336;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        .delete-btn:hover {
-            background-color: #d32f2f;
-        }
 
         .time-range {
             color: #666;
@@ -81,38 +69,6 @@
         .form-group {
             margin: 15px 0;
         }
-
-        .modal-buttons {
-            margin-top: 20px;
-        }
-
-        .save-btn {
-            background: #4CAF50;
-        }
-
-        .cancel-btn {
-            background: #f44336;
-            margin-left: 10px;
-        }
-        .logout-btn {
-            background-color: #ff4444;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            margin-left: auto;
-            transition: background-color 0.3s;
-        }
-
-        .logout-btn:hover {
-            background-color: #cc0000;
-        }
-
-        .nav-container {
-            display: flex;
-            align-items: center;
-        }
     </style>
 </head>
 <body>
@@ -129,7 +85,7 @@
 
     <div class="container">
         <h2>Suppression Rules</h2>
-        <button onclick="showModal()" class="btn">Add New Rule</button>
+        <button onclick="showModal()" class="save-btn">Add New Rule</button>
         <table class="suppression-table" id="suppressions-table">
             <thead>
                 <tr>
@@ -164,11 +120,11 @@
             </div>
 
             <div id="criteria-container"></div>
-            <button onclick="addCriterion()" class="btn">Add Criterion</button>
+            <button onclick="addCriterion()" class="save-btn">Add Criterion</button>
             
             <div class="modal-buttons">
-                <button onclick="saveSuppressionRule()" class="btn save-btn">Save</button>
-                <button onclick="closeModal()" class="btn cancel-btn">Cancel</button>
+                <button onclick="saveSuppressionRule()" class="save-btn">Save</button>
+                <button onclick="closeModal()" class="delete-btn">Cancel</button>
             </div>
         </div>
     </div>
@@ -322,7 +278,7 @@
                     <option value="AND">AND</option>
                     <option value="OR">OR</option>
                 </select>
-                <button onclick="this.parentElement.remove()" class="btn">Remove</button>
+                <button onclick="this.parentElement.remove()" class="delete-btn">Remove</button>
             `;
             container.appendChild(div);
         }

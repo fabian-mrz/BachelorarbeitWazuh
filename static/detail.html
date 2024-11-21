@@ -15,12 +15,6 @@
         </div>
     </nav>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f5f5f5;
-        }
-
         .rule-time {
             color: #666;
             font-size: 0.9em;
@@ -48,27 +42,6 @@
             border-bottom: 1px solid #ddd;
         }
 
-        .back-btn,
-        .btn,
-        .download-btn {
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            text-decoration: none;
-            display: inline-block;
-            margin: 5px;
-        }
-
-        .download-btn {
-            background-color: #2196F3;
-        }
-
-        .download-btn:hover {
-            background-color: #1976D2;
-        }
 
         pre {
             background-color: #f8f8f8;
@@ -94,25 +67,6 @@
 
         .operator-select {
             margin: 0 10px;
-        }
-        .logout-btn {
-            background-color: #ff4444;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            margin-left: auto;
-            transition: background-color 0.3s;
-        }
-
-        .logout-btn:hover {
-            background-color: #cc0000;
-        }
-
-        .nav-container {
-            display: flex;
-            align-items: center;
         }
     </style>
     <script>
@@ -166,7 +120,7 @@
 
                 // Add CSV download if available
                 if (details.csv_path) {
-                    addRow('CSV Export', `<a href="${details.csv_path}" class="download-btn" download>Download Events CSV</a>`);
+                    addRow('CSV Export', `<a href="${details.csv_path}" class="edit-btn" download>Download Events CSV</a>`);
                 }
 
                 // Add parsed details
@@ -234,7 +188,7 @@
                     <option value="AND">AND</option>
                     <option value="OR">OR</option>
                 </select>
-                <button onclick="removeCriterion(this)" class="btn">Remove</button>
+                <button onclick="removeCriterion(this)" class="delete-btn">Remove</button>
             `;
 
             return div;
@@ -342,8 +296,8 @@
                 <div class="rule-time">
                     <strong>Time Range:</strong> ${timeRangeText}
                 </div>
-                <button onclick="editRule('${id}')" class="btn">Edit</button>
-                <button onclick="deleteRule('${id}')" class="btn">Delete</button>
+                <button onclick="editRule('${id}')" class="edit-btn">Edit</button>
+                <button onclick="deleteRule('${id}')" class="delete-btn">Delete</button>
                 `;
                     listEl.appendChild(ruleEl);
                 }
@@ -492,7 +446,7 @@
                 alert('Failed to update suppression rule');
             }
         }
-        document.getElementById('logoutBtn').addEventListener('click', function() {
+        document.getElementById('logoutBtn').addEventListener('click', function () {
             // Clear authentication token
             localStorage.removeItem('token');
             // Redirect to login page
@@ -514,7 +468,6 @@
 </head>
 
 <body>
-    <button class="back-btn" onclick="window.location.href='/'">Back to Incidents</button>
     <h1>Incident Details</h1>
     <table id="details" class="details-table"></table>
     <div id="suppression-management">
@@ -534,8 +487,8 @@
                     <input type="date" id="range-end">
                 </div>
             </div>
-            <button onclick="addCriterion()" class="btn">Add Criterion</button>
-            <button onclick="saveSuppressionRule()" class="btn">Save Rule</button>
+            <button onclick="addCriterion()" class="save-btn">Add Criterion</button>
+            <button onclick="saveSuppressionRule()" class="save-btn">Save Rule</button>
         </div>
     </div>
 </body>

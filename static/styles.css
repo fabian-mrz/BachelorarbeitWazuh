@@ -1,57 +1,133 @@
+/* General Styles */
 body {
     font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 0;
+    margin: 20px;
     background-color: #f5f5f5;
 }
 
-.navbar {
-    background-color: #333;
-    padding: 1rem;
-    margin-bottom: 2rem;
-    width: 100%;
-    position: sticky;
-    top: 0;
-    z-index: 100;
+/* Section Containers */
+.config-section {
+    background-color: white;
+    margin: 20px 0;
+    padding: 20px;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.nav-container {
-    max-width: 1200px;
-    margin: 0 auto;
+.config-group {
+    margin: 15px 0;
 }
 
-.nav-link {
-    color: white;
-    text-decoration: none;
-    padding: 0.5rem 1rem;
-    margin-right: 1rem;
+/* Form Elements */
+label {
+    display: inline-block;
+    width: 120px;
+    font-weight: bold;
+}
+
+input {
+    width: 300px;
+    padding: 8px;
+    border: 1px solid #ddd;
     border-radius: 4px;
 }
 
-.nav-link:hover, .nav-link.active {
-    background-color: #444;
-}
-
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 1rem;
-}
-
-button {
+/* Buttons */
+.save-btn {
     background-color: #4CAF50;
     color: white;
     border: none;
     padding: 8px 16px;
     cursor: pointer;
     border-radius: 4px;
-    margin-right: 5px;
+    margin: 5px;
 }
 
-button:hover {
-    background-color: #45a049;
+.save-btn:hover {
+    background-color: #225d23;
 }
 
-h1 {
-    color: #333;
+.delete-btn {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.delete-btn:hover {
+    background-color: #d32f2f;
+}
+
+.navbar {
+    background-color: #333;
+    overflow: hidden;
+    padding: 10px 20px;
+    display: flex;
+}
+
+
+
+.nav-link {
+    color: white;
+    text-decoration: none;
+    padding: 12px 16px;
+    transition: background-color 0.3s;
+}
+
+
+
+.navbar a:hover {
+    background-color: #555;
+}
+
+.navbar .active {
+    background-color: #1b1d1b;
+}
+
+
+.logout-btn {
+    background-color: #ff4444;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 4px;
+    /* margin-left: auto not needed with justify-content: space-between */
+    transition: background-color 0.3s;
+}
+
+.logout-btn:hover {  /* Changed from .logoutBtn */
+    background-color: #cc0000;
+}
+
+.edit-btn {
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.edit-btn:hover {
+    background-color: #1976D2;
+}
+
+
+/* Responsive Design */
+@media screen and (max-width: 600px) {
+    input {
+        width: 100%;
+    }
+    
+    .navbar {
+        flex-direction: column;
+    }
+    
+    .navbar a {
+        width: 100%;
+        text-align: center;
+    }
 }

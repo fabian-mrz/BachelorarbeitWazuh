@@ -15,95 +15,61 @@
         </div>
     </nav>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f5f5f5;
-        }
 
-        .config-section {
-            background-color: white;
-            margin: 20px 0;
-            padding: 20px;
-            border-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-        }
-
-        .config-group {
-            margin: 15px 0;
-        }
-
-        label {
+        /* Toggle Switch Styles */
+        .switch {
+            position: relative;
             display: inline-block;
-            width: 120px;
-            font-weight: bold;
+            width: 60px;
+            height: 34px;
         }
 
-        input {
-            width: 300px;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
         }
 
-        .btn {
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+        }
+
+        input:checked+.slider {
             background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            margin: 5px;
         }
 
-        .btn:hover {
-            background-color: #45a049;
+        input:checked+.slider:before {
+            transform: translateX(26px);
         }
 
-        .logout-btn {
-            background-color: #ff4444;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            margin-left: auto;
-            transition: background-color 0.3s;
+        .slider.round {
+            border-radius: 34px;
         }
 
-        .logout-btn:hover {
-            background-color: #cc0000;
-        }
-
-
-
-        .nav-link {
-            color: white;
-            text-decoration: none;
-            padding: 8px 16px;
-            margin: 0 5px;
-        }
-
-        .nav-link:hover {
-            background-color: #45a049;
-            border-radius: 4px;
-        }
-
-        h1 {
-            color: #333;
-            margin: 20px 0;
-        }
-
-        .save-btn {
-            background-color: #2196F3;
-            margin-top: 20px;
-        }
-
-        .save-btn:hover {
-            background-color: #1976D2;
+        .slider.round:before {
+            border-radius: 50%;
         }
     </style>
 </head>
+
 
 <body>
     <h1>System Settings</h1>
@@ -118,6 +84,13 @@
             <div class="config-group">
                 <label>Bot Token:</label>
                 <input type="password" id="telegram_bot_token">
+            </div>
+            <div class="config-group">
+                <label>Enabled:</label>
+                <label class="switch">
+                    <input type="checkbox" id="telegram_enabled">
+                    <span class="slider round"></span>
+                </label>
             </div>
         </div>
 
@@ -143,6 +116,13 @@
                 <label>From:</label>
                 <input type="email" id="smtp_from">
             </div>
+            <div class="config-group">
+                <label>Enabled:</label>
+                <label class="switch">
+                    <input type="checkbox" id="smtp_enabled">
+                    <span class="slider round"></span>
+                </label>
+            </div>
         </div>
 
         <div class="config-section">
@@ -158,6 +138,13 @@
             <div class="config-group">
                 <label>Host:</label>
                 <input type="text" id="sip_host">
+            </div>
+            <div class="config-group">
+                <label>Enabled:</label>
+                <label class="switch">
+                    <input type="checkbox" id="sip_enabled">
+                    <span class="slider round"></span>
+                </label>
             </div>
         </div>
 
@@ -181,31 +168,64 @@
                 }
                 const settings = await response.json();
 
-                // Populate form fields
-                document.getElementById('telegram_chat_id').value = settings.telegram.CHAT_ID;
-                document.getElementById('telegram_bot_token').value = settings.telegram.BOT_TOKEN;
+                // Log raw settings
+                console.log('Raw settings:', settings);
 
-                document.getElementById('smtp_server').value = settings.smtp.server;
-                document.getElementById('smtp_port').value = settings.smtp.port;
-                document.getElementById('smtp_username').value = settings.smtp.username;
-                document.getElementById('smtp_password').value = settings.smtp.password;
-                document.getElementById('smtp_from').value = settings.smtp.from;
+                // Set default values if settings sections are undefined
+                const telegram = {
+                    ...settings.telegram,
+                    enabled: settings.telegram?.enabled === 'True'
+                };
 
-                document.getElementById('sip_username').value = settings.sip.username;
-                document.getElementById('sip_password').value = settings.sip.password;
-                document.getElementById('sip_host').value = settings.sip.host;
+                const smtp = {
+                    ...settings.smtp,
+                    enabled: settings.smtp?.enabled === 'True'
+                };
+
+                const sip = {
+                    ...settings.sip,
+                    enabled: settings.sip?.enabled === 'True'
+                };
+
+
+
+                // Log enabled states
+                console.log('Telegram enabled:', telegram.enabled);
+                console.log('SMTP enabled:', smtp.enabled);
+                console.log('SIP enabled:', sip.enabled);
+
+                // Telegram settings with explicit false fallback
+                document.getElementById('telegram_enabled').checked = telegram.enabled === true;
+                document.getElementById('telegram_chat_id').value = telegram.CHAT_ID || '';
+                document.getElementById('telegram_bot_token').value = telegram.BOT_TOKEN || '';
+
+                // SMTP settings with explicit false fallback
+                document.getElementById('smtp_enabled').checked = smtp.enabled === true;
+                document.getElementById('smtp_server').value = smtp.server || '';
+                document.getElementById('smtp_port').value = smtp.port || '';
+                document.getElementById('smtp_username').value = smtp.username || '';
+                document.getElementById('smtp_password').value = smtp.password || '';
+                document.getElementById('smtp_from').value = smtp.from || '';
+
+                // SIP settings with explicit false fallback
+                document.getElementById('sip_enabled').checked = sip.enabled === true;
+                document.getElementById('sip_username').value = sip.username || '';
+                document.getElementById('sip_password').value = sip.password || '';
+                document.getElementById('sip_host').value = sip.host || '';
+
             } catch (error) {
                 console.error('Error loading settings:', error);
             }
         }
-
         async function saveSettings() {
             const settings = {
                 telegram: {
+                    enabled: document.getElementById('telegram_enabled').checked,
                     CHAT_ID: document.getElementById('telegram_chat_id').value,
                     BOT_TOKEN: document.getElementById('telegram_bot_token').value
                 },
                 smtp: {
+                    enabled: document.getElementById('smtp_enabled').checked,
                     server: document.getElementById('smtp_server').value,
                     port: document.getElementById('smtp_port').value,
                     username: document.getElementById('smtp_username').value,
@@ -213,11 +233,12 @@
                     from: document.getElementById('smtp_from').value
                 },
                 sip: {
+                    enabled: document.getElementById('sip_enabled').checked,
                     username: document.getElementById('sip_username').value,
                     password: document.getElementById('sip_password').value,
                     host: document.getElementById('sip_host').value
                 }
-            };
+            };;
 
             try {
                 const response = await fetch('/settings', {
@@ -243,14 +264,27 @@
             window.location.href = 'login.html';
         });
 
-        window.onload = function () {
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM fully loaded');
+
+
+            // Verify token and load settings
             const token = localStorage.getItem('token');
             if (!token) {
                 window.location.href = '/login.html';
                 return;
             }
             loadSettings();
-        };
+            // Verify checkboxes exist
+            const telegramCheckbox = document.getElementById('telegram_enabled');
+            const smtpCheckbox = document.getElementById('smtp_enabled');
+            const sipCheckbox = document.getElementById('sip_enabled');
+
+            console.log('Initial checkbox states:');
+            console.log('Telegram checkbox:', telegramCheckbox?.checked);
+            console.log('SMTP checkbox:', smtpCheckbox?.checked);
+            console.log('SIP checkbox:', sipCheckbox?.checked);
+        });
     </script>
 </body>
 

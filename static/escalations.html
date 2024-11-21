@@ -9,8 +9,6 @@
             background: white;
             padding: 15px;
             margin: 10px 0;
-            border-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
 
         .contact-select {
@@ -42,31 +40,7 @@
             display: inline-block;
         }
 
-        .remove-contact {
-            margin-left: 5px;
-            cursor: pointer;
-            color: red;
-        }
-
-        .logout-btn {
-            background-color: #ff4444;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            margin-left: auto;
-            transition: background-color 0.3s;
-        }
-
-        .logout-btn:hover {
-            background-color: #cc0000;
-        }
-
-        .nav-container {
-            display: flex;
-            align-items: center;
-        }
+  
     </style>
 </head>
 
@@ -96,7 +70,7 @@
         <!-- Rule-specific Settings -->
         <div class="settings-section">
             <h3>Rule-specific Escalations</h3>
-            <button onclick="addNewRule()" class="add-btn">Add New Rule</button>
+            <button onclick="addNewRule()" class="save-btn">Add New Rule</button>
             <div id="rule-phases">
                 <!-- Rule phases will be added here -->
             </div>

@@ -236,6 +236,7 @@ SMTP_USER = config['SMTP']['username']
 SMTP_PASS = config['SMTP']['password']
 SMTP_FROM = config['SMTP']['from']
 
+
 #phone controller
 # Global LinphoneController instance
 phone_controller = LinphoneController(
@@ -337,76 +338,55 @@ async def send_notifications(incident_id: str):
         incident = incidents[incident_id]
         incident_data = json.loads(incident.description)
         rule_id = incident_data['rule_id']
-        csv_filename = incident_data.get('csv_path')  # Directory name like "531_1730653308"
+        csv_filename = incident_data.get('csv_path')
         csv_path = "./static" + csv_filename
-        
         
         # Load configurations
         template_data = load_template(rule_id)
         escalation = await load_escalation_config(rule_id)
         contacts = load_contacts()
         
-        # Process template once
+        # Process template
         processed_fields = process_template_fields(template_data, incident_data)
         message = template_data['template'].format(**processed_fields)
-        
-        # Immediate notifications first (email and telegram)
+
+        # Immediate notifications (email and telegram)
         for contact_id in escalation['phases'][0]['contacts']:
             contact = contacts[contact_id]
             
-            # Send email with attachment
-            # try:
-            #     msg = MIMEMultipart()
-            #     msg['From'] = SMTP_FROM
-            #     msg['To'] = contact['email']
-            #     msg['Subject'] = f"Security Alert - Rule {rule_id}"
-            #     msg.attach(MIMEText(message, 'plain'))
-                
-            #     # Attach CSV if available
-            #     if csv_path and os.path.exists(csv_path):
-            #         with open(csv_path, 'rb') as f:
-            #             part = MIMEApplication(f.read(), Name=os.path.basename(csv_path))
-            #             part['Content-Disposition'] = f'attachment; filename="{os.path.basename(csv_path)}"'
-            #             msg.attach(part)
-                
-            #     server = smtplib.SMTP("smtp.office365.com", 587)
-            #     server.starttls()
-            #     server.login(SMTP_USER, SMTP_PASS)
-            #     server.send_message(msg)
-            #     server.quit()
-            #     print(f"✉️ Email sent to {contact['name']} ({contact['email']}) with attachment")
-            # except Exception as e:
-            #     print(f"Error sending email to {contact['email']}: {e}")
-            
-            # Update the telegram part in send_notifications
-            try:
-                # Send telegram message and document
-                await send_telegram_notification(
-                    message=message,
-                    csv_path=csv_path
-                )
-            except Exception as e:
-                print(f"Error in telegram notification: {e}")
+            # Send email if enabled
+            if contact['email'] and config['SMTP'].get('enabled', 'False').lower() == 'true':
+                try:
+                    await send_email_notification(contact, message, csv_path)
+                except Exception as e:
+                    print(f"Error sending email to {contact['email']}: {e}")
 
-        # Handle phone calls with delay
+            # Send telegram if enabled    
+            if config['telegram'].get('enabled', 'False').lower() == 'true':
+                try:
+                    await send_telegram_notification(
+                        message=message,
+                        csv_path=csv_path
+                    )
+                except Exception as e:
+                    print(f"Error in telegram notification: {e}")
+
+        # Handle phone calls
         for phase in escalation['phases']:
             if incidents[incident_id].acknowledged:
                 return
                 
-            if phase['type'] == 'phone':
-                # Wait for configured delay
+            if phase['type'] == 'phone' and config['SIP'].get('enabled', 'False').lower() == 'true':
                 if phase['delay'] > 0:
                     await asyncio.sleep(phase['delay'] * 60)
                 
                 if incidents[incident_id].acknowledged:
                     return
                 
-                # Make phone calls with await
                 for contact_id in phase['contacts']:
                     try:
-                        
-                        print(f"📞 Calling {contacts[contact_id]['name']} ({contacts[contact_id]['phone']})")
                         contact = contacts[contact_id]
+                        print(f"📞 Calling {contact['name']} ({contact['phone']})")
                         ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknoledge and 5 to skip. {message}")
                         if ack:
                             incidents[incident_id].acknowledged = True
@@ -415,15 +395,35 @@ async def send_notifications(incident_id: str):
                             return
                     except Exception as e:
                         print(f"Error making phone call: {e}")
-                        continue    
-                        
-                                  
+                        continue
 
-
-                    
     except Exception as e:
         print(f"Error in notification process: {e}")
 
+async def send_email_notification(contact: dict, message: str, csv_path: str = None):
+                    """Send email notification with optional CSV attachment"""
+                    try:
+                        msg = MIMEMultipart()
+                        msg['From'] = SMTP_FROM
+                        msg['To'] = contact['email']
+                        msg['Subject'] = "Security Alert"
+                        msg.attach(MIMEText(message, 'plain'))
+                        
+                        # Attach CSV if available
+                        if csv_path and os.path.exists(csv_path):
+                            with open(csv_path, 'rb') as f:
+                                part = MIMEApplication(f.read(), Name=os.path.basename(csv_path))
+                                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(csv_path)}"'
+                                msg.attach(part)
+                        
+                        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                        server.starttls()
+                        server.login(SMTP_USER, SMTP_PASS)
+                        server.send_message(msg)
+                        server.quit()
+                        print(f"✉️ Email sent to {contact['name']} ({contact['email']}) with attachment")
+                    except Exception as e:
+                        print(f"Error sending email to {contact['email']}: {e}")
 
 # Update telegram sending code
 async def send_telegram_notification(message: str, csv_path: str = None):
@@ -785,7 +785,8 @@ def read_config() -> Dict:
         return {
             "telegram": {
                 "CHAT_ID": str(config['telegram']['CHAT_ID']),
-                "BOT_TOKEN": config['telegram']['BOT_TOKEN']
+                "BOT_TOKEN": config['telegram']['BOT_TOKEN'],
+                "enabled": config['telegram']['enabled']
             },
             "smtp": dict(config['SMTP']),
             "sip": dict(config['SIP'])
@@ -796,7 +797,8 @@ def read_config() -> Dict:
 def save_config(settings: Dict):
     config['telegram'] = {
         'CHAT_ID': settings['telegram']['CHAT_ID'],
-        'BOT_TOKEN': settings['telegram']['BOT_TOKEN']
+        'BOT_TOKEN': settings['telegram']['BOT_TOKEN'],
+        'enabled': settings['telegram']['enabled']
     }
     
     config['SMTP'] = {
@@ -804,13 +806,15 @@ def save_config(settings: Dict):
         'port': str(settings['smtp']['port']),
         'username': settings['smtp']['username'],
         'password': settings['smtp']['password'],
-        'from': settings['smtp']['from']
+        'from': settings['smtp']['from'],
+        'enabled': settings['smtp']['enabled']
     }
     
     config['SIP'] = {
         'username': settings['sip']['username'],
         'password': settings['sip']['password'],
-        'host': settings['sip']['host']
+        'host': settings['sip']['host'],
+        'enabled': settings['sip']['enabled']
     }
     
     try:
@@ -833,6 +837,16 @@ async def update_settings(settings: Dict, admin_user = Depends(is_admin)):
         return {"message": "Settings updated successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+#Templates
+@app.route('/list_templates')
+def list_templates():
+    templates = []
+    for file in os.listdir(TEMPLATES_DIR):
+        if file.endswith('.json'):
+            templates.append(file)
+    return jsonify(templates)
+
 
 # Mount static files - simplified to avoid conflicts
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

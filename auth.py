@@ -79,24 +79,16 @@ def create_access_token(data: dict):
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     try:
-        # Log full credentials object
-        logger.debug(f"Received credentials object: {credentials}")
-        logger.debug(f"Authorization scheme: {credentials.scheme}")
+
         
         token = credentials.credentials
-        logger.debug(f"Attempting to verify token: {token[:10]}...") # Show first 10 chars only
         
         # Log key verification details
-        logger.debug(f"Using SECRET_KEY (first 4 chars): {SECRET_KEY[:4]}...")
-        logger.debug(f"Using algorithm: {ALGORITHM}")
         
         start_time = time.time()
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         decode_time = time.time() - start_time
-        
-        logger.debug(f"Token decoded successfully in {decode_time:.2f}s")
-        logger.debug(f"Token payload: {payload}")
-        logger.debug(f"Token expiry: {payload.get('exp')}")
+
         return payload
         
     except ExpiredSignatureError as e:
