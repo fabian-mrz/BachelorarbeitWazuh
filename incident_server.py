@@ -24,13 +24,14 @@ from auth import verify_auth, create_access_token, get_db, verify_token, is_admi
 from sqlalchemy.orm import Session
 import uvicorn
 from typing import Dict
-
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 
 app = FastAPI()
 
 
-##
+#
 class LinphoneController:
     def reset(self):
         """Reset controller state between calls"""
@@ -506,7 +507,9 @@ async def update_incident(incident_id: str, new_data: dict):
         raise
 
 
-#call
+# Create thread pool executor
+thread_pool = ThreadPoolExecutor(max_workers=4)
+
 async def make_phone_call(contact: dict, message: str) -> bool:
     """Make phone call and return if acknowledged"""
     try:
@@ -514,23 +517,33 @@ async def make_phone_call(contact: dict, message: str) -> bool:
         print(f"   Phone: {contact['phone']}")
         print(f"   Message length: {len(message)} chars")
         
-        # Validate contact data
         if not contact.get('phone'):
             print("❌ Invalid phone number in contact")
             return False
             
-        # Debug LinphoneController state
         print(f"   SIP Server: {phone_controller.sip_server}")
         print(f"   SIP Username: {phone_controller.username}")
         print(f"   Process active: {phone_controller.process is not None}")
         
-        # Make the call with detailed error handling
-        dtmf, success, error = phone_controller.make_call(
+        # Run blocking call in thread pool
+        loop = asyncio.get_running_loop()
+        make_call_func = partial(
+            phone_controller.make_call,
             number=contact['phone'],
             message=message,
             timeout=60
         )
         
+        # Execute call with timeout
+        try:
+            dtmf, success, error = await asyncio.wait_for(
+                loop.run_in_executor(thread_pool, make_call_func),
+                timeout=70  # Slightly longer than call timeout
+            )
+        except asyncio.TimeoutError:
+            print(f"❌ Call timed out for {contact['name']}")
+            return False
+            
         print(f"   Call completed:")
         print(f"   - DTMF received: {dtmf}")
         print(f"   - Success: {success}")
