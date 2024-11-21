@@ -105,7 +105,7 @@
                 <td>${incident.acknowledged ? '✅ Acknowledged' : incident.escalated ? '⚠️ Escalated' : '⏳ Pending'}</td>
                 <td>
                     ${!incident.acknowledged && !incident.escalated ?
-                            `<button onclick="acknowledgeIncident('${id}')">Acknowledge</button>` :
+                            `<button class="save-btn" onclick="acknowledgeIncident('${id}')">Acknowledge</button>` :
                             incident.escalated ? 'Escalated' : 'Acknowledged'}
                     <button class="edit-btn" onclick="window.location.href='/detail.html?id=${id}'">Show Details</button>
                 </td>
