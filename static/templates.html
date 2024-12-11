@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Template Editor</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js"></script>
+    <style>
+        .editor-container {
+            display: flex;
+            gap: 20px;
+            margin: 20px;
+            height: calc(100vh - 150px);
+        }
+
+        #editor,
+        #preview {
+            flex: 1;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            overflow-y: auto;
+        }
+
+        #editor {
+            font-family: monospace;
+            resize: none;
+            white-space: pre-wrap;
+        }
+
+        .controls {
+            padding: 20px;
+            background: white;
+            border-radius: 4px;
+            margin: 20px;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            position: relative;
+            background: white;
+            margin: 10% auto;
+            padding: 20px;
+            width: 80%;
+            max-width: 800px;
+            border-radius: 4px;
+        }
+
+        #jsonInput {
+            width: 100%;
+            margin: 10px 0;
+        }
+
+        #fieldsList {
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+
+        .field-item {
+            padding: 5px;
+            cursor: pointer;
+        }
+
+        .field-item:hover {
+            background: #f5f5f5;
+        }
+
+        .modal-buttons {
+            text-align: right;
+            margin-top: 10px;
+        }
+
+        .import-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="nav-link">Incidents</a>
+            <a href="escalations.html" class="nav-link">Escalation Settings</a>
+            <a href="contacts.html" class="nav-link">Contacts</a>
+            <a href="suppressions.html" class="nav-link">Suppressions</a>
+            <a href="settings.html" class="nav-link">Settings</a>
+            <a href="templates.html" class="nav-link">Templates</a>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </div>
+    </nav>
+    <h2>Templates</h2>
+    <div class="controls">
+        <select id="templateSelect">
+            <option value="">Select Template</option>
+        </select>
+        <input type="text" id="newTemplateName" placeholder="New template name">
+        <button class="save-btn" onclick="saveTemplate()">Save</button>
+        <button class="delete-btn" onclick="deleteTemplate()">Delete</button>
+        <button class="import-btn" onclick="showImportModal()">Import Fields</button>
+    </div>
+
+    <div class="editor-container">
+        <textarea id="editor" oninput="updatePreview()"></textarea>
+        <div id="preview"></div>
+    </div>
+
+    <div id="importModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Import Fields from Alert JSON</h3>
+            <textarea id="jsonInput" rows="10" placeholder="Paste alert JSON here"></textarea>
+            <div id="fieldsList"></div>
+            <div class="modal-buttons">
+                <button onclick="insertSelectedFields()">Insert Selected Fields</button>
+                <button onclick="closeModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTemplate = '';
+        let currentFields = {};
+
+        async function loadTemplates() {
+            const response = await fetch('/list_templates');
+            const templates = await response.json();
+            const select = document.getElementById('templateSelect');
+            select.innerHTML = '<option value="">Select Template</option>';
+            templates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template;
+                option.textContent = template;
+                select.appendChild(option);
+            });
+        }
+
+        async function loadTemplateContent(templateName) {
+            const response = await fetch(`/templates/${templateName}`);
+            const content = await response.json();
+            currentFields = content.fields;
+            document.getElementById('editor').value = content.template;
+            updatePreview();
+        }
+
+        function updatePreview() {
+            const editor = document.getElementById('editor');
+            const preview = document.getElementById('preview');
+            preview.innerHTML = marked.parse(editor.value);
+        }
+
+        function extractFields(template) {
+            const fieldRegex = /{([^}]+)}/g;
+            const matches = template.match(fieldRegex) || [];
+            return matches.map(match => match.slice(1, -1));
+        }
+
+
+        async function saveTemplate() {
+            const name = document.getElementById('newTemplateName').value || currentTemplate;
+            if (!name) return alert('Please enter a template name');
+
+            const template = document.getElementById('editor').value;
+            const updatedFields = updateFields(template);
+
+            // Log removed/added fields for debugging
+            const removedFields = Object.keys(currentFields).filter(f => !updatedFields[f]);
+            const addedFields = Object.keys(updatedFields).filter(f => !currentFields[f]);
+
+            if (removedFields.length > 0) {
+                console.log('Removed fields:', removedFields);
+            }
+            if (addedFields.length > 0) {
+                console.log('Added fields:', addedFields);
+            }
+
+            const jsonContent = {
+                template: template,
+                fields: updatedFields
+            };
+
+            try {
+                await fetch(`/templates/${name}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jsonContent)
+                });
+                currentFields = updatedFields;
+                await loadTemplates();
+            } catch (e) {
+                alert('Error saving template');
+            }
+        }
+
+        function updateFields(template) {
+            // Extract current template fields
+            const currentTemplateFields = extractFields(template);
+            const updatedFields = {};
+
+            // Add existing fields that are still present in template
+            Object.entries(currentFields).forEach(([field, value]) => {
+                if (currentTemplateFields.includes(field)) {
+                    updatedFields[field] = value;
+                }
+            });
+
+            // Add new fields with default getter
+            currentTemplateFields.forEach(field => {
+                if (!updatedFields[field]) {
+                    updatedFields[field] = `alert_json.get('data', {}).get('${field}', 'N/A')`;
+                }
+            });
+
+            return updatedFields;
+        }
+
+        async function deleteTemplate() {
+            if (!currentTemplate) return;
+
+            if (confirm(`Delete template ${currentTemplate}?`)) {
+                await fetch(`/templates/${currentTemplate}`, { method: 'DELETE' });
+                await loadTemplates();
+                document.getElementById('editor').value = '';
+                updatePreview();
+                currentTemplate = '';
+                currentFields = {};
+            }
+        }
+
+        document.getElementById('templateSelect').addEventListener('change', (e) => {
+            currentTemplate = e.target.value;
+            if (currentTemplate) {
+                loadTemplateContent(currentTemplate);
+            }
+        });
+
+        function showImportModal() {
+            document.getElementById('importModal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('importModal').style.display = 'none';
+        }
+
+        function extractFieldPaths(obj, prefix = '') {
+            let fields = [];
+
+            for (let key in obj) {
+                const newPrefix = prefix ? `${prefix}.${key}` : key;
+
+                if (typeof obj[key] === 'object' && obj[key] !== null) {
+                    fields = fields.concat(extractFieldPaths(obj[key], newPrefix));
+                } else {
+                    fields.push({
+                        path: newPrefix,
+                        value: obj[key]
+                    });
+                }
+            }
+
+            return fields;
+        }
+
+        function showFields(fields) {
+            const fieldsList = document.getElementById('fieldsList');
+            fieldsList.innerHTML = fields.map(field => `
+        <div class="field-item">
+            <input type="checkbox" id="${field.path}">
+            <label for="${field.path}">
+                ${field.path} = ${JSON.stringify(field.value)}
+            </label>
+        </div>
+    `).join('');
+        }
+
+        async function parseJsonInput() {
+            const jsonInput = document.getElementById('jsonInput');
+            try {
+                const alertJson = JSON.parse(jsonInput.value);
+                const fields = extractFieldPaths(alertJson);
+                showFields(fields);
+            } catch (e) {
+                alert('Invalid JSON');
+            }
+        }
+
+        function insertSelectedFields() {
+            const editor = document.getElementById('editor');
+            const checkboxes = document.querySelectorAll('#fieldsList input:checked');
+            let template = editor.value;
+
+            checkboxes.forEach(checkbox => {
+                const fieldPath = checkbox.id;
+                template += `\n+ ${fieldPath}: {${fieldPath}}`;
+            });
+
+            editor.value = template;
+            updatePreview();
+            updateFields(template);
+            closeModal();
+        }
+
+        loadTemplates();
+        document.getElementById('jsonInput').addEventListener('input', parseJsonInput);
+    </script>
+</body>
+
+</html>

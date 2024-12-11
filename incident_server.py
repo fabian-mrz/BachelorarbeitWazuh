@@ -12,18 +12,15 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import smtplib
 from email.mime.application import MIMEApplication
-from telegram import Bot
-from telegram.constants import ParseMode
+import telegram
 import subprocess
 import time
 from pathlib import Path
-import wave
 import threading
 import re
 from auth import verify_auth, create_access_token, get_db, verify_token, is_admin
 from sqlalchemy.orm import Session
 import uvicorn
-from typing import Dict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
@@ -31,7 +28,7 @@ from functools import partial
 app = FastAPI()
 
 
-#
+#Phone controller
 class LinphoneController:
     def reset(self):
         """Reset controller state between calls"""
@@ -167,6 +164,7 @@ class LinphoneController:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
+            time.sleep(3)  # Wait for setup
             
             # Register SIP account
             print("Registering SIP account")
@@ -210,7 +208,7 @@ class LinphoneController:
                 self.process.terminate()
             return [], None, "error"
 
-# Add constants
+# constants
 BASE_DIR = './'
 # Update constants at top of file
 STATIC_DIR = './static/incidents'
@@ -259,8 +257,6 @@ class Incident(BaseModel):
     escalated: bool = False
     update_count: int = 0  # Add counter for updates
 
-
-# Update models in incident_server.py
 class TimeRange(BaseModel):
     permanent: bool = False
     start: Optional[str] = None
@@ -312,7 +308,7 @@ def load_template(rule_id):
         return None    
 
 
-
+#proccess template fields
 def process_template_fields(template_data: dict, incident_data: dict) -> dict:
     """Process template fields using incident data"""
     processed_fields = {}
@@ -332,7 +328,7 @@ def process_template_fields(template_data: dict, incident_data: dict) -> dict:
     
     return processed_fields
 
-
+#notification
 async def send_notifications(incident_id: str):
     """Send notifications with attachments using template and escalation config"""
     try:
@@ -401,6 +397,7 @@ async def send_notifications(incident_id: str):
     except Exception as e:
         print(f"Error in notification process: {e}")
 
+#email notification
 async def send_email_notification(contact: dict, message: str, csv_path: str = None):
                     """Send email notification with optional CSV attachment"""
                     try:
@@ -426,37 +423,31 @@ async def send_email_notification(contact: dict, message: str, csv_path: str = N
                     except Exception as e:
                         print(f"Error sending email to {contact['email']}: {e}")
 
-# Update telegram sending code
+# telegram notification
 async def send_telegram_notification(message: str, csv_path: str = None):
-    """Send telegram notification using python-telegram-bot"""
+    """Send notification via Telegram with markdown formatting"""
     try:
-        bot = Bot(token=BOT_TOKEN)
+        bot = telegram.Bot(token=config['telegram']['BOT_TOKEN'])
+        chat_id = config['telegram']['CHAT_ID']
         
-        # Send message first
+        # Send message with markdown parsing
         await bot.send_message(
-            chat_id=CHAT_ID,
+            chat_id=chat_id,
             text=message,
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode='MarkdownV2'
         )
-        print(f"📱 Telegram message sent to CHATID")
         
-        # Send document if available
+        # Send CSV if exists
         if csv_path and os.path.exists(csv_path):
-            print(f"📎 Sending CSV via Telegram: {csv_path}")
-            with open(csv_path, 'rb') as doc:
-                await bot.send_document(
-                    chat_id=CHAT_ID,
-                    document=doc,
-                    filename='events.csv'
-                )
-            print(f"📎 CSV file sent via Telegram")
-            
+            async with aiofiles.open(csv_path, 'rb') as doc:
+                await bot.send_document(chat_id=chat_id, document=doc)
+                
     except Exception as e:
-        print(f"Error sending telegram notification: {e}")
+        print(f"Telegram notification error: {e}")
+        raise
 
 
-
-##update
+##update incidents
 async def find_active_incident(rule_id: str) -> str:
     """Find existing unacknowledged incident for rule_id"""
     for inc_id, inc in incidents.items():
@@ -836,7 +827,7 @@ def save_config(settings: Dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving config: {str(e)}")
 
-# API Endpoints
+#settings
 @app.get("/settings")
 async def get_settings(admin_user = Depends(is_admin)):
     """Get all settings from config.ini"""
@@ -852,13 +843,42 @@ async def update_settings(settings: Dict, admin_user = Depends(is_admin)):
         raise HTTPException(status_code=500, detail=str(e))
     
 #Templates
-@app.route('/list_templates')
-def list_templates():
-    templates = []
-    for file in os.listdir(TEMPLATES_DIR):
-        if file.endswith('.json'):
-            templates.append(file)
-    return jsonify(templates)
+@app.get('/list_templates')
+async def list_templates():
+    """List all available notification templates"""
+    try:
+        templates = []
+        for file in os.listdir(TEMPLATES_DIR):
+            if file.endswith('.json'):
+                templates.append(file)
+        return templates
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error listing templates: {str(e)}"
+        )
+
+@app.get("/templates/{template_name}")
+async def get_template(template_name: str):
+    try:
+        with open(f"{TEMPLATES_DIR}/{template_name}") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+@app.post("/templates/{template_name}")
+async def save_template(template_name: str, template: dict):
+    with open(f"{TEMPLATES_DIR}/{template_name}", 'w') as f:
+        json.dump(template, f, indent=2)
+    return {"message": "Template saved"}
+
+@app.delete("/templates/{template_name}")
+async def delete_template(template_name: str):
+    try:
+        os.remove(f"{TEMPLATES_DIR}/{template_name}")
+        return {"message": "Template deleted"}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Template not found")
 
 
 # Mount static files - simplified to avoid conflicts

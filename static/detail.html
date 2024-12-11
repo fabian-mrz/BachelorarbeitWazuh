@@ -4,16 +4,6 @@
 <head>
     <title>Incident Details</title>
     <link rel="stylesheet" href="styles.css">
-    <nav class="navbar">
-        <div class="nav-container">
-            <a href="index.html" class="nav-link">Incidents</a>
-            <a href="escalations.html" class="nav-link">Escalation Settings</a>
-            <a href="contacts.html" class="nav-link">Contacts</a>
-            <a href="suppressions.html" class="nav-link">Suppressions</a>
-            <a href="settings.html" class="nav-link">Settings</a>
-            <button id="logoutBtn" class="logout-btn">Logout</button>
-        </div>
-    </nav>
     <style>
         .rule-time {
             color: #666;
@@ -446,12 +436,6 @@
                 alert('Failed to update suppression rule');
             }
         }
-        document.getElementById('logoutBtn').addEventListener('click', function () {
-            // Clear authentication token
-            localStorage.removeItem('token');
-            // Redirect to login page
-            window.location.href = 'login.html';
-        });
 
         // Update window.onload
         window.onload = () => {
@@ -459,6 +443,14 @@
             if (!token) {
                 window.location.href = '/login.html';
                 return;
+            }
+            // Add logout button event listener
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', function () {
+                    localStorage.removeItem('token');
+                    window.location.href = 'login.html';
+                });
             }
             toggleTimeRange();
             loadIncidentDetails();
@@ -468,6 +460,17 @@
 </head>
 
 <body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="nav-link">Incidents</a>
+            <a href="escalations.html" class="nav-link">Escalation Settings</a>
+            <a href="contacts.html" class="nav-link">Contacts</a>
+            <a href="suppressions.html" class="nav-link">Suppressions</a>
+            <a href="settings.html" class="nav-link">Settings</a>
+            <a href="templates.html" class="nav-link">Templates</a>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </div>
+    </nav>
     <h1>Incident Details</h1>
     <table id="details" class="details-table"></table>
     <div id="suppression-management">
