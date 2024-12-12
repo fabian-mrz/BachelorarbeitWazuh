@@ -23,9 +23,62 @@ from sqlalchemy.orm import Session
 import uvicorn
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+from datetime import datetime
+# Add imports at top
+import bcrypt
+import secrets
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+import logging
+
+
+# Add logging config
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 app = FastAPI()
+
+#DB
+
+
+# Database setup
+# Add database setup
+SQLALCHEMY_DATABASE_URL = "sqlite:///./users.db"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Add User model
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String(100), unique=True)
+    name = Column(String(100))
+    email = Column(String(100), unique=True)
+    phone = Column(String(20))
+    department = Column(String(50))
+    role = Column(String(20))
+    password_hash = Column(String(100))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    reset_token = Column(String(100))
+    token_expiry = Column(DateTime)
+
+# Add database dependency
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 #Phone controller
@@ -289,10 +342,7 @@ async def load_escalation_config(rule_id: str = None):
         return escalations['rules'][rule_id]
     return escalations['default']
 
-def load_contacts():
-    """Load contacts from contacts.json"""
-    with open('contacts.json') as f:
-        return json.load(f)['contacts']
+
     
 def load_template(rule_id):
     """Load template for specific rule_id or fall back to default"""
@@ -626,53 +676,165 @@ async def save_escalations(escalations: dict, token = Depends(verify_token)):
 
 # contacts
 
+def generate_password():
+    return secrets.token_urlsafe(12)
+
+# Updated endpoints
 @app.get("/api/contacts")
-async def get_contacts(token = Depends(verify_token)):
+async def get_contacts(db: Session = Depends(get_db), token = Depends(verify_token)):
     try:
-        print(f"Token received: {token}")  # Debug logging
-        with open('contacts.json') as f:
-            return json.load(f)
+        users = db.query(User).all()
+        return {
+            "contacts": {
+                f"contact_{user.id}": {
+                    "name": user.name,
+                    "email": user.email,
+                    "phone": user.phone,
+                    "department": user.department,
+                    "role": user.role
+                } for user in users
+            }
+        }
     except Exception as e:
         print(f"Error getting contacts: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error retrieving contacts: {str(e)}"
-        )
-    
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/contacts")
-async def create_contact(contact: dict, token = Depends(verify_token)):
-    with open('contacts.json', 'r+') as f:
-        data = json.load(f)
-        contact_id = f"contact_{len(data['contacts']) + 1}"
-        data['contacts'][contact_id] = contact
-        f.seek(0)
-        json.dump(data, f, indent=4)
-        f.truncate()
-    return {"id": contact_id}
+async def create_contact(contact: dict, db: Session = Depends(get_db), token = Depends(verify_token)):
+    try:
+        # Debug logging
+        logger.debug(f"Creating contact: {contact}")
+        
+        # Generate initial password
+        temp_password = generate_password()
+        logger.debug(f"Generated temp password")
+        
+        # Create user object
+        user = User(
+            username=contact["email"],
+            name=contact["name"],
+            email=contact["email"],
+            phone=contact.get("phone"),
+            department=contact.get("department"),
+            role=contact.get("role"),
+            password_hash=hash_password(temp_password),
+            reset_token=None,
+            token_expiry=None
+        )
+        logger.debug("Created user object")
+        
+        # Database operations
+        try:
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            logger.debug(f"Saved user {user.id}")
+        except Exception as db_error:
+            logger.error(f"Database error: {str(db_error)}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
+        
+        # Send email
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = SMTP_FROM
+            msg['To'] = user.email
+            msg['Subject'] = "Your temporary password"
+            msg.attach(MIMEText(f"Your temporary password is: {temp_password}", 'plain'))
+            
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+            server.quit()
+            logger.debug(f"Sent password email to {user.email} with password {temp_password}") 
+        except Exception as email_error:
+            logger.error(f"Email error: {str(email_error)}")
+            # Don't rollback DB - user is created but email failed
+            
+        return {"id": f"contact_{user.id}"}
+        
+    except Exception as e:
+        logger.error(f"Error creating contact: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+# Add password change request model
+class PasswordChangeRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(
+        plain_password.encode(), 
+        hashed_password.encode()
+    )
+
+@app.post("/api/change-password")
+async def change_password(
+    request: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    token = Depends(verify_token)
+):
+    try:
+        # Get user from token
+        user = db.query(User).filter(User.username == token["sub"]).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        # Verify old password
+        if not verify_password(request.old_password, user.password_hash):
+            raise HTTPException(status_code=400, detail="Invalid old password")
+            
+        # Update password
+        user.password_hash = hash_password(request.new_password)
+        db.commit()
+        
+        return {"message": "Password updated successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/contacts/{contact_id}")
-async def delete_contact(contact_id: str, token = Depends(verify_token)):
-    with open('contacts.json', 'r+') as f:
-        data = json.load(f)
-        if contact_id in data['contacts']:
-            del data['contacts'][contact_id]
-            f.seek(0)
-            json.dump(data, f, indent=4)
-            f.truncate()
-            return {"message": "Contact deleted"}
-        raise HTTPException(status_code=404, detail="Contact not found")
-    
+async def delete_contact(contact_id: str, db: Session = Depends(get_db), token = Depends(verify_token)):
+    try:
+        user_id = int(contact_id.replace("contact_", ""))
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        db.delete(user)
+        db.commit()
+        return {"message": "Contact deleted"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid contact ID")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.put("/api/contacts/{contact_id}")
-async def update_contact(contact_id: str, contact: dict, token = Depends(verify_token)):
-    with open('contacts.json', 'r+') as f:
-        data = json.load(f)
-        if contact_id in data['contacts']:
-            data['contacts'][contact_id] = contact
-            f.seek(0)
-            json.dump(data, f, indent=4)
-            f.truncate()
-            return {"message": "Contact updated"}
-        raise HTTPException(status_code=404, detail="Contact not found")
+async def update_contact(contact_id: str, contact: dict, db: Session = Depends(get_db), token = Depends(verify_token)):
+    try:
+        user_id = int(contact_id.replace("contact_", ""))
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Contact not found")
+            
+        user.username = contact["email"]
+        user.name = contact["name"]
+        user.email = contact["email"]
+        user.phone = contact.get("phone")
+        user.department = contact.get("department")
+        user.role = contact.get("role")
+        user.updated_at = datetime.utcnow()
+        
+        db.commit()
+        return {"message": "Contact updated"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid contact ID")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
     
 # suppression
 # Add helper functions
@@ -879,6 +1041,10 @@ async def delete_template(template_name: str):
         return {"message": "Template deleted"}
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Template not found")
+    
+@app.get("/isadmin")
+async def check_admin(admin_user = Depends(is_admin)):
+    return {"is_admin": True}
 
 
 # Mount static files - simplified to avoid conflicts
@@ -886,4 +1052,4 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="localhost", port=8000)
