@@ -18,67 +18,35 @@ import time
 from pathlib import Path
 import threading
 import re
-from auth import verify_auth, create_access_token, get_db, verify_token, is_admin
+from auth import verify_auth, create_access_token, verify_token, is_admin
+from database import SessionLocal, Base, engine, get_db
+from models import User
+import bcrypt
+import logging
 from sqlalchemy.orm import Session
 import uvicorn
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from datetime import datetime
-# Add imports at top
-import bcrypt
 import secrets
-from fastapi import HTTPException, Depends
-from sqlalchemy.orm import Session
-import logging
+
+
 
 
 # Add logging config
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+
+def init_db():
+    Base.metadata.create_all(bind=engine)
+    
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 app = FastAPI()
 
-#DB
 
-
-# Database setup
-# Add database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./users.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# Add User model
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True)
-    username = Column(String(100), unique=True)
-    name = Column(String(100))
-    email = Column(String(100), unique=True)
-    phone = Column(String(20))
-    department = Column(String(50))
-    role = Column(String(20))
-    password_hash = Column(String(100))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
-    reset_token = Column(String(100))
-    token_expiry = Column(DateTime)
-
-# Add database dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 #Phone controller
@@ -836,6 +804,52 @@ async def update_contact(contact_id: str, contact: dict, db: Session = Depends(g
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     
+class PasswordResetRequest(BaseModel):
+    new_password: str
+
+@app.put("/api/admin/reset-password/{user_id}")
+async def admin_reset_password(
+    user_id: int,
+    request: PasswordResetRequest,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(is_admin)
+):
+    try:
+        # Find target user
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        # Update password
+        user.password_hash = hash_password(request.new_password)
+        db.commit()
+        
+        return {"message": f"Password reset successful for user {user.username}"}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    role: str 
+
+@app.get("/api/users", response_model=List[UserResponse])
+async def get_users(admin_user: User = Depends(is_admin)):
+    try:
+        db = next(get_db())
+        users = db.query(User).all()
+        return [
+            UserResponse(
+                id=user.id,
+                username=user.username,
+                role=user.role
+            ) for user in users
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 # suppression
 # Add helper functions
 def load_suppressions() -> dict:
@@ -1052,4 +1066,5 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 if __name__ == "__main__":
+    init_db()
     uvicorn.run(app, host="localhost", port=8000)

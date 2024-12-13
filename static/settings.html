@@ -5,7 +5,6 @@
     <title>[Page Title] - Incident Manager</title>
     <link rel="stylesheet" href="styles.css">
     <style>
-
         /* Toggle Switch Styles */
         .switch {
             position: relative;
@@ -57,13 +56,68 @@
         .slider.round:before {
             border-radius: 50%;
         }
+
+        .settings-container {
+            padding: 20px;
+        }
+
+        .settings-section {
+            margin-bottom: 30px;
+            display: none;
+        }
+
+        .settings-section.active {
+            display: block;
+        }
+
+        .settings-nav {
+            margin-bottom: 20px;
+        }
+
+        .settings-nav button {
+            padding: 10px 20px;
+            margin-right: 10px;
+            border: none;
+            background: #f0f0f0;
+            cursor: pointer;
+        }
+
+        .settings-nav button.active {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .password-reset-form {
+            display: none;
+            margin: 20px 0;
+        }
+
+        .user-table {
+            width: 100%;
+            margin-top: 20px;
+            border-collapse: collapse;
+        }
+
+        .user-table th,
+        .user-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .selected-user-info {
+            background: #f5f5f5;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
     </style>
 </head>
 
-
 <body>
     <nav class="navbar">
-        <div class="nav-container">
+        <div class="nav-container"></div>
             <a href="index.html" class="nav-link">Incidents</a>
             <a href="escalations.html" class="nav-link">Escalation Settings</a>
             <a href="contacts.html" class="nav-link">Contacts</a>
@@ -149,10 +203,50 @@
             </div>
         </div>
 
+        <div class="config-section" id="adminSection">
+            <h2>User Management</h2>
+            <div class="config-group">
+                <table id="userTable" class="user-table">
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Actions</th>
+                    </tr>
+                </table>
+
+                <div id="resetForm" class="password-reset-form">
+                    <div class="config-group">
+                        <div class="selected-user-info">
+                            <strong>Selected User:</strong> <span id="selectedUserInfo">None</span>
+                        </div>
+                        <label>New Password:</label>
+                        <input type="hidden" id="selectedUserId">
+                        <input type="password" id="newPassword" placeholder="New Password">
+                    </div>
+                    <div class="config-group">
+                        <button class="save-btn" onclick="resetPassword()">Save Password</button>
+                        <button class="delete-btn" onclick="cancelReset()">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <button onclick="saveSettings()" class="btn save-btn">Save Settings</button>
     </div>
-
     <script>
+        function getAuthHeaders() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+        }
+
         async function loadSettings() {
             try {
                 const response = await fetch('/settings', {
@@ -188,8 +282,6 @@
                     enabled: settings.sip?.enabled === 'True'
                 };
 
-
-
                 // Log enabled states
                 console.log('Telegram enabled:', telegram.enabled);
                 console.log('SMTP enabled:', smtp.enabled);
@@ -218,6 +310,7 @@
                 console.error('Error loading settings:', error);
             }
         }
+
         async function saveSettings() {
             const settings = {
                 telegram: {
@@ -239,7 +332,7 @@
                     password: document.getElementById('sip_password').value,
                     host: document.getElementById('sip_host').value
                 }
-            };;
+            };
 
             try {
                 const response = await fetch('/settings', {
@@ -268,7 +361,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log('DOM fully loaded');
 
-
             // Verify token and load settings
             const token = localStorage.getItem('token');
             if (!token) {
@@ -276,16 +368,89 @@
                 return;
             }
             loadSettings();
-            // Verify checkboxes exist
-            const telegramCheckbox = document.getElementById('telegram_enabled');
-            const smtpCheckbox = document.getElementById('smtp_enabled');
-            const sipCheckbox = document.getElementById('sip_enabled');
-
-            console.log('Initial checkbox states:');
-            console.log('Telegram checkbox:', telegramCheckbox?.checked);
-            console.log('SMTP checkbox:', smtpCheckbox?.checked);
-            console.log('SIP checkbox:', sipCheckbox?.checked);
         });
+
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users', {
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const users = await response.json();
+                const table = document.getElementById('userTable');
+                table.innerHTML = `
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Actions</th>
+                    </tr>
+                `;
+
+                users.forEach(user => {
+                    const row = table.insertRow();
+                    row.innerHTML = `
+                <td>${user.id}</td>
+                <td>${user.username}</td>
+                <td>${user.role}</td>
+                <td>
+                    <button onclick="showResetForm(${user.id}, '${user.username}')" 
+                            class="edit-btn">Reset Password</button>
+                </td>
+            `;
+                });
+            } catch (error) {
+                console.error('Error loading users:', error);
+            }
+        }
+
+        // Update showResetForm to display user info
+        function showResetForm(userId, username) {
+            document.getElementById('selectedUserId').value = userId;
+            document.getElementById('selectedUserInfo').textContent = `${username} (ID: ${userId})`;
+            document.getElementById('resetForm').style.display = 'block';
+        }
+
+        // Update cancelReset to clear user info
+        function cancelReset() {
+            document.getElementById('resetForm').style.display = 'none';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('selectedUserInfo').textContent = 'None';
+        }
+
+        async function resetPassword() {
+            const userId = document.getElementById('selectedUserId').value;
+            const newPassword = document.getElementById('newPassword').value;
+
+            try {
+                const response = await fetch(`/api/admin/reset-password/${userId}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ new_password: newPassword })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                alert('Password reset successful');
+                cancelReset();
+            } catch (error) {
+                console.error('Error resetting password:', error);
+                alert('Failed to reset password');
+            }
+        }
+
+        window.onload = function () {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            loadUsers();
+        }
     </script>
 </body>
 

@@ -1,19 +1,18 @@
 from datetime import datetime, timezone, timedelta
 import jwt
-from fastapi import HTTPException, Security
+from fastapi import HTTPException, Security, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
 import logging
-from sqlalchemy.orm import Session
-from jwt import ExpiredSignatureError, InvalidTokenError  # Updated imports
-import jwt
+from jwt import ExpiredSignatureError, InvalidTokenError
 from functools import wraps
-from fastapi import Depends
 import time
-import logging
+from database import get_db
+from models import User
+
 
 # Configure logging
 logging.basicConfig(
@@ -29,23 +28,9 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
-# Database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./users.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    password_hash = Column(String)
-    role = Column(String)  # Changed from Enum to String
-
-Base.metadata.create_all(bind=engine)
 
 # JWT Configuration
 SECRET_KEY = "asdasdfljnasdkfaljkdflkasfawe8"
@@ -56,12 +41,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 security = HTTPBearer()
 logger = logging.getLogger(__name__)
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
