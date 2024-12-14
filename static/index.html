@@ -117,8 +117,8 @@
                 row.innerHTML = `
         <td>${incident.timestamp}</td>
         <td>${details.rule_description}</td>
-        <td>${incident.acknowledged ? '✅ Acknowledged' : incident.escalated ? '⚠️ Escalated' : '⏳ Pending'}</td>
-        <td>
+        <td>${incident.acknowledged ? `✅ Acknowledged by ${incident.acknowledged_by}` : incident.escalated ? '⚠️ Escalated' : '⏳ Pending'}</td>
+<td>
             ${!incident.acknowledged && !incident.escalated ?
                         `<button class="save-btn" onclick="acknowledgeIncident('${id}')">Acknowledge</button>`
                         : ''}

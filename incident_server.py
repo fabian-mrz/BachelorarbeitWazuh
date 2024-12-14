@@ -611,8 +611,10 @@ async def acknowledge_incident(incident_id: str, token = Depends(verify_token)):
     incident = incidents[incident_id]
     if not incident.escalated:
         incident.acknowledged = True
-        print(f"✅ Incident {incident_id} acknowledged successfully")
-        return {"message": "Incident acknowledged"}
+        # Extract username from token and store it
+        incident.acknowledged_by = token["sub"]  # token contains username in "sub" field
+        print(f"✅ Incident {incident_id} acknowledged by {incident.acknowledged_by}")
+        return {"message": f"Incident acknowledged by {incident.acknowledged_by}"}
     else:
         return {"message": "Incident already escalated"}
 
