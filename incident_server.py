@@ -1,7 +1,7 @@
 # incident_server.py
 from fastapi import FastAPI, HTTPException, Depends, Security, status
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 import asyncio
 from typing import Dict, Optional, List
@@ -239,6 +239,9 @@ DEFAULT_TEMPLATE_PATH = os.path.join(TEMPLATES_DIR, 'default.json')
 OUTPUT_DIR = Path('/var/ossec/integrations')
 SUPPRESSIONS_FILE = Path("suppressions.json")
 
+archived_incidents = {}
+
+
 #telegram
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -271,12 +274,24 @@ incidents = {}
 
 class Incident(BaseModel):
     id: str
-    timestamp: str
+    title: Optional[str] = None
     description: str
+    severity: Optional[int] = None
+    source: Optional[str] = None
     acknowledged: bool = False
-    acknowledged_by: str = None
+    acknowledged_by: Optional[str] = None
     escalated: bool = False
-    update_count: int = 0  # Add counter for updates
+    created_at: datetime = Field(default_factory=datetime.now)
+    archived: bool = False
+    archived_at: Optional[datetime] = None
+    archived_by: Optional[str] = None
+    update_count: int = 0  # Add update counter
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
 
 class TimeRange(BaseModel):
     permanent: bool = False
@@ -466,55 +481,40 @@ async def send_telegram_notification(message: str, csv_path: str = None):
 
 
 ##update incidents
-async def find_active_incident(rule_id: str) -> str:
-    """Find existing unacknowledged incident for rule_id"""
-    for inc_id, inc in incidents.items():
-        if not inc.acknowledged:
-            try:
-                details = json.loads(inc.description)
-                if details['rule_id'] == rule_id:
-                    return inc_id
-            except:
-                continue
+async def find_active_incident(rule_id: str) -> Optional[str]:
+    for id, incident in incidents.items():
+        incident_data = json.loads(incident.description)
+        if (incident_data.get('rule_id') == rule_id and 
+            not incident.archived):  # Only check non-archived incidents
+            return id
     return None
 
-async def update_incident(incident_id: str, new_data: dict):
-    """Update existing incident with new event data"""
+async def update_incident(incident_id: str, new_data: dict) -> None:
     try:
         incident = incidents[incident_id]
         old_data = json.loads(incident.description)
         
-        # Extract relevant data from new incident
-        old_data['total_events'] = old_data.get('total_events', 0) + 1
-        old_data['last_event_timestamp'] = new_data.get('last_event_timestamp', 
-                                                       new_data.get('timestamp', 'N/A'))
+        print(f"Old data: {old_data}")
+        print(f"New data: {new_data}")
         
-        # Update agent names if present - handle lists properly
-        if 'agent_names' in old_data and 'agent_names' in new_data:
-            # Convert lists to sets, merge, then back to list
-            old_agents = set(old_data['agent_names'])
-            new_agents = set(new_data['agent_names'])
-            old_data['agent_names'] = list(old_agents.union(new_agents))
-            
-        # Update sample event if present
-        if 'sample_event' in new_data:
-            old_data['sample_event'] = new_data['sample_event']
-            
-        # Update CSV path if present
-        if 'csv_path' in new_data:
-            old_data['csv_path'] = new_data['csv_path']
+        # Update event counts and timestamps
+        new_data['total_events'] = old_data.get('total_events', 0) + new_data.get('total_events', 0)
         
-        # Update incident
-        incident.description = json.dumps(old_data)
+        # Keep earliest first_event_timestamp
+        if 'first_event_timestamp' in old_data:
+            old_first = datetime.fromisoformat(old_data['first_event_timestamp'])
+            new_first = datetime.fromisoformat(new_data['first_event_timestamp'])
+            new_data['first_event_timestamp'] = min(old_first, new_first).isoformat()
+            
+        incident.description = json.dumps(new_data)
         incident.update_count += 1
-        print(f"📝 Updated incident {incident_id} (Update #{incident.update_count})")
+        
+        print(f"✏️ Incident {incident_id} updated (update #{incident.update_count})")
+        return incident_id
         
     except Exception as e:
         print(f"Error in update_incident: {e}")
-        print(f"Old data: {old_data}")
-        print(f"New data: {new_data}")
         raise
-
 
 # Create thread pool executor
 thread_pool = ThreadPoolExecutor(max_workers=4)
@@ -620,16 +620,46 @@ async def acknowledge_incident(incident_id: str, token = Depends(verify_token)):
 
 @app.get("/incidents/")
 async def list_incidents(token = Depends(verify_token)):
-    return incidents
+    return {id: incident for id, incident in incidents.items() 
+            if not incident.archived}
 
 @app.get("/incidents/{incident_id}")
 async def get_incident(incident_id: str, token = Depends(verify_token)):
+    # Check active incidents first
+    if incident_id in incidents:
+        return incidents[incident_id]
+    
+    # Then check archived incidents
+    if incident_id in archived_incidents:
+        return archived_incidents[incident_id]
+        
+    raise HTTPException(
+        status_code=404, 
+        detail=f"Incident {incident_id} not found"
+    )
+
+#archive 
+@app.get("/incidents/archived/")
+async def list_archived_incidents(token = Depends(verify_token)):
+    return archived_incidents
+
+@app.post("/incidents/{incident_id}/archive")
+async def archive_incident(incident_id: str, token = Depends(verify_token)):
     if incident_id not in incidents:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"Incident {incident_id} not found"
-        )
-    return incidents[incident_id]
+        raise HTTPException(status_code=404, detail="Incident not found")
+    
+    incident = incidents[incident_id]
+    incident.archived = True
+    incident.archived_at = datetime.now()
+    incident.archived_by = token["sub"]
+    
+    # Move to archive dictionary
+    archived_incidents[incident_id] = incidents.pop(incident_id)
+    
+    print(f"📦 Incident {incident_id} archived by {incident.archived_by}")
+    return {"message": f"Incident archived by {incident.archived_by}"}
+
+
 
 # escalations
 
@@ -860,6 +890,22 @@ def load_suppressions() -> dict:
         return {}
     with open(SUPPRESSIONS_FILE) as f:
         return json.load(f)
+    
+
+#load contacts from users.db
+def load_contacts() -> dict:
+    """Load contacts from users.db"""
+    db = next(get_db())
+    users = db.query(User).all()
+    return {
+        f"contact_{user.id}": {
+            "name": user.name,
+            "email": user.email,
+            "phone": user.phone,
+            "department": user.department,
+            "role": user.role
+        } for user in users
+    }
 
 def save_suppressions(suppressions: dict):
     """Save suppressions to file"""

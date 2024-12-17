@@ -4,7 +4,7 @@
 
 
 <head>
-    <title>Incident Management</title>
+    <title>Archived Incidents</title>
     <link rel="stylesheet" href="styles.css">
     <style>
         .test-controls {
@@ -46,9 +46,11 @@
             <button id="logoutBtn" class="logout-btn">Logout</button>
         </div>
     </nav>
-    <table id="incidents">
+    <h1>Archived Incidents</h1>
+    <table id="archived-incidents">
         <tr>
-            <th>Timestamp</th>
+            <th>Created</th>
+            <th>Archived</th>
             <th>Description</th>
             <th>Status</th>
             <th>Actions</th>
@@ -88,9 +90,9 @@
         }
     }
 
-    async function loadIncidents() {
+    async function loadArchivedIncidents() {
         try {
-            const response = await fetch('/incidents/', {
+            const response = await fetch('/incidents/archived/', {
                 headers: getAuthHeaders()
             });
             if (!response.ok) {
@@ -101,75 +103,34 @@
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const incidents = await response.json();
-            const table = document.getElementById('incidents');
+            const table = document.getElementById('archived-incidents');
             table.innerHTML = `
-            <tr>
-            <th>Timestamp</th>
-            <th>Description</th>
-            <th>Status</th>
-            <th>Actions</th>
-            </tr>
-        `;
+                    <tr>
+                        <th>Created</th>
+                        <th>Archived</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                `;
 
             for (const [id, incident] of Object.entries(incidents)) {
                 const details = parseDescription(incident.description);
                 const row = table.insertRow();
                 row.innerHTML = `
-        <td>${new Date(incident.created_at).toLocaleString()}</td>
-        <td>${details.rule_description}</td>
-        <td>${incident.acknowledged ?
-                        `✅ Acknowledged by ${incident.acknowledged_by}` :
-                        incident.escalated ? '⚠️ Escalated' : '⏳ Pending'}</td>
-        <td>
-            ${!incident.acknowledged && !incident.escalated ?
-                        `<button class="save-btn" onclick="acknowledgeIncident('${id}')">Acknowledge</button>`
-                        : ''}
-            <button class="edit-btn" onclick="window.location.href='/detail.html?id=${id}'">Show Details</button>
-            <button class="delete-btn" onclick="archiveIncident('${id}')" 
-                ${incident.archived ? 'disabled' : ''}>
-                Archive
-            </button>
-        </td>
-    `;
+                        <td>${incident.created_at}</td>
+                        <td>${incident.archived_at}</td>
+                        <td>${details.rule_description}</td>
+                        <td>Archived by ${incident.archived_by}</td>
+                        <td>
+                            <button class="edit-btn" onclick="window.location.href='/detail.html?id=${id}'">
+                                Show Details
+                            </button>
+                        </td>
+                    `;
             }
         } catch (error) {
-            console.error('Error loading incidents:', error);
-        }
-    }
-
-    async function archiveIncident(id) {
-        try {
-            const response = await fetch(`/incidents/${id}/archive`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            if (response.ok) {
-                loadIncidents();
-            }
-        } catch (error) {
-            console.error('Error archiving incident:', error);
-        }
-    }
-
-    // Update acknowledgeIncident function
-    async function acknowledgeIncident(id) {
-        try {
-            const response = await fetch(`/incidents/${id}/acknowledge`, {
-                method: 'POST',
-                headers: getAuthHeaders()
-            });
-            if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
-                    window.location.href = '/login.html';
-                    return;
-                }
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            loadIncidents();
-        } catch (error) {
-            console.error('Error acknowledging incident:', error);
+            console.error('Error loading archived incidents:', error);
         }
     }
 
@@ -186,8 +147,7 @@
             window.location.href = '/login.html';
             return;
         }
-        loadIncidents();
-        setInterval(loadIncidents, 5000);
+        loadArchivedIncidents();
         setActiveNavLink();
     }
 </script>
