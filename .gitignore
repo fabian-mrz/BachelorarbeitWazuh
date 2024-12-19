@@ -30,3 +30,5 @@ Test.ipynb
 auth.log
 Test.ipynb
 Test.ipynb
+audit_logs/current_audit.log
+/audit_logs

@@ -112,6 +112,28 @@
             border-radius: 4px;
             border-left: 4px solid #4CAF50;
         }
+
+        .audit-log {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        #auditTable {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #auditTable th,
+        #auditTable td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        #auditTable tr:nth-child(even) {
+            background-color: #f5f5f5;
+        }
     </style>
 </head>
 
@@ -202,6 +224,28 @@
                 </label>
             </div>
         </div>
+        <div class="config-section">
+            <h2>Audit Log</h2>
+            <div class="audit-controls">
+                <button onclick="downloadAuditLogs()" class="save-btn">Download Logs</button>
+                <button onclick="clearAuditLogs()" class="delete-btn">Clear Logs</button>
+            </div>
+            <div class="audit-log">
+                <table id="auditTable">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>User</th>
+                            <th>Action</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="auditLogBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
 
         <div class="config-section" id="adminSection">
             <h2>User Management</h2>
@@ -246,6 +290,61 @@
                 'Content-Type': 'application/json'
             };
         }
+
+        async function downloadAuditLogs() {
+            try {
+                window.location.href = '/api/audit-logs/download';
+            } catch (error) {
+                console.error('Error downloading audit logs:', error);
+            }
+        }
+
+        async function clearAuditLogs() {
+            if (!confirm('Are you sure you want to clear the audit logs? They will be archived.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/audit-logs/clear', {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+
+                if (response.ok) {
+                    loadAuditLogs();
+                } else {
+                    alert('Failed to clear audit logs');
+                }
+            } catch (error) {
+                console.error('Error clearing audit logs:', error);
+            }
+        }
+
+        async function loadAuditLogs() {
+            try {
+                const response = await fetch('/api/audit-logs', {
+                    headers: getAuthHeaders()
+                });
+                if (!response.ok) throw new Error('Failed to fetch audit logs');
+
+                const logs = await response.json();
+                const tbody = document.getElementById('auditLogBody');
+                tbody.innerHTML = '';
+
+                logs.forEach(log => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                <td>${new Date(log.timestamp).toLocaleString()}</td>
+                <td>${log.user || 'System'}</td>
+                <td>${log.action}</td>
+                <td>${log.details}</td>
+            `;
+                });
+            } catch (error) {
+                console.error('Error loading audit logs:', error);
+            }
+        }
+
 
         async function loadSettings() {
             try {
@@ -450,6 +549,8 @@
                 return;
             }
             loadUsers();
+            loadAuditLogs();
+            setInterval(loadAuditLogs, 30000); // Refresh every 30 seconds
         }
     </script>
 </body>

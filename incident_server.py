@@ -32,9 +32,24 @@ import secrets
 
 
 
-# Add logging config
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+# Add to global variables
+LOGS_DIR = "audit_logs"
+CURRENT_LOG_FILE = os.path.join(LOGS_DIR, "current_audit.log")
+
+# Create logs directory if it doesn't exist
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+def add_audit_log(action: str, user: str = None, details: str = None):
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "user": user,
+        "action": action,
+        "details": details
+    }
+    
+    with open(CURRENT_LOG_FILE, 'a') as f:
+        f.write(json.dumps(log_entry) + '\n')
+
 
 
 def init_db():
@@ -45,9 +60,6 @@ def hash_password(password: str) -> str:
 
 
 app = FastAPI()
-
-
-
 
 #Phone controller
 class LinphoneController:
@@ -310,11 +322,13 @@ class SuppressionRule(BaseModel):
     criteria: List[SuppressionCriterion]
     timeRange: TimeRange
 
+
+# Remove, esalation is already handling this
 async def handle_incident_timer(incident_id: str):
     await asyncio.sleep(60)
     if not incidents[incident_id].acknowledged:
         incidents[incident_id].escalated = True
-        print(f"⚠️ Incident {incident_id} not acknowledged within 60 seconds - escalating!")
+        add_audit_log(f"⚠️ Incident {incident_id} not acknowledged within 60 seconds - escalating!")
 
 async def load_escalation_config(rule_id: str = None):
     """Load escalation config for specific rule or default"""
@@ -326,7 +340,6 @@ async def load_escalation_config(rule_id: str = None):
     return escalations['default']
 
 
-    
 def load_template(rule_id):
     """Load template for specific rule_id or fall back to default"""
     template_path = os.path.join(TEMPLATES_DIR, f'{rule_id}.json')
@@ -421,7 +434,9 @@ async def send_notifications(incident_id: str):
                         if ack:
                             incidents[incident_id].acknowledged = True
                             incidents[incident_id].acknowledged_by = contact['name']
-                            print(f"✅ Incident {incident_id} acknowledged by {contact['name']}")
+                            add_audit_log("Incident Acknowledged by Phone Call", contact['name'])
+                        else:
+                            add_audit_log("Escalating furhter. Incident Not Acknowledged by Phone Call", contact['name'])
                             return
                     except Exception as e:
                         print(f"Error making phone call: {e}")
@@ -516,7 +531,7 @@ async def update_incident(incident_id: str, new_data: dict) -> None:
         print(f"Error in update_incident: {e}")
         raise
 
-# Create thread pool executor
+# Create thread pool executor for phone call
 thread_pool = ThreadPoolExecutor(max_workers=4)
 
 async def make_phone_call(contact: dict, message: str) -> bool:
@@ -551,6 +566,7 @@ async def make_phone_call(contact: dict, message: str) -> bool:
             )
         except asyncio.TimeoutError:
             print(f"❌ Call timed out for {contact['name']}")
+            add_audit_log("Contact did not pick up Phone Call", contact['name'])
             return False
             
         print(f"   Call completed:")
@@ -613,6 +629,7 @@ async def acknowledge_incident(incident_id: str, token = Depends(verify_token)):
         incident.acknowledged = True
         # Extract username from token and store it
         incident.acknowledged_by = token["sub"]  # token contains username in "sub" field
+        add_audit_log("Acknowledge Incident", token["sub"], f"Incident ID: {incident_id}")
         print(f"✅ Incident {incident_id} acknowledged by {incident.acknowledged_by}")
         return {"message": f"Incident acknowledged by {incident.acknowledged_by}"}
     else:
@@ -627,16 +644,56 @@ async def list_incidents(token = Depends(verify_token)):
 async def get_incident(incident_id: str, token = Depends(verify_token)):
     # Check active incidents first
     if incident_id in incidents:
+        add_audit_log("Get Incident", token["sub"], f"Incident ID: {incident_id}")
         return incidents[incident_id]
     
     # Then check archived incidents
     if incident_id in archived_incidents:
+        add_audit_log("Get Archived Incident", token["sub"], f"Incident ID: {incident_id}")
         return archived_incidents[incident_id]
         
     raise HTTPException(
         status_code=404, 
         detail=f"Incident {incident_id} not found"
     )
+
+
+#audit log
+@app.get("/api/audit-logs")
+async def get_audit_logs(token = Depends(verify_token)):
+    logs = []
+    if os.path.exists(CURRENT_LOG_FILE):
+        with open(CURRENT_LOG_FILE, 'r') as f:
+            logs = [json.loads(line) for line in f.readlines()]
+    return logs[-100:]  # Return last 100 logs
+
+@app.get("/api/audit-logs/download")
+async def download_audit_logs(token = Depends(verify_token)):
+    add_audit_log("Download Audit Logs", token["sub"])
+    if not os.path.exists(CURRENT_LOG_FILE):
+        raise HTTPException(status_code=404, detail="No audit logs found")
+    return FileResponse(
+        CURRENT_LOG_FILE,
+        filename=f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    )
+
+@app.post("/api/audit-logs/clear")
+async def clear_audit_logs(token = Depends(verify_token)):
+    if not is_admin(token):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    if os.path.exists(CURRENT_LOG_FILE):
+        # Archive current log
+        archive_name = f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        os.rename(CURRENT_LOG_FILE, os.path.join(LOGS_DIR, archive_name))
+        
+        # Create new empty log file
+        open(CURRENT_LOG_FILE, 'w').close()
+        
+        add_audit_log("Clear Audit Logs", token["sub"], f"Archived as {archive_name}")
+        return {"message": "Audit logs cleared and archived"}
+    
+    return {"message": "No logs to clear"}
 
 #archive 
 @app.get("/incidents/archived/")
@@ -657,6 +714,7 @@ async def archive_incident(incident_id: str, token = Depends(verify_token)):
     archived_incidents[incident_id] = incidents.pop(incident_id)
     
     print(f"📦 Incident {incident_id} archived by {incident.archived_by}")
+    add_audit_log("Archive Incident", token["sub"], f"Incident ID: {incident_id}")
     return {"message": f"Incident archived by {incident.archived_by}"}
 
 
@@ -670,6 +728,7 @@ async def get_escalations(token = Depends(verify_token)):
 
 @app.post("/api/escalations")
 async def save_escalations(escalations: dict, token = Depends(verify_token)):
+    add_audit_log("Save Escalations", token["sub"])
     with open('escalations.json', 'w') as f:
         json.dump(escalations, f, indent=4)
     return {"message": "Escalations saved successfully"}
@@ -704,11 +763,10 @@ async def get_contacts(db: Session = Depends(get_db), token = Depends(verify_tok
 async def create_contact(contact: dict, db: Session = Depends(get_db), token = Depends(verify_token)):
     try:
         # Debug logging
-        logger.debug(f"Creating contact: {contact}")
+        add_audit_log("Create Contact by", token["sub"], f"Creating contact: {contact}")
         
         # Generate initial password
         temp_password = generate_password()
-        logger.debug(f"Generated temp password")
         
         # Create user object
         user = User(
@@ -722,16 +780,13 @@ async def create_contact(contact: dict, db: Session = Depends(get_db), token = D
             reset_token=None,
             token_expiry=None
         )
-        logger.debug("Created user object")
         
         # Database operations
         try:
             db.add(user)
             db.commit()
             db.refresh(user)
-            logger.debug(f"Saved user {user.id}")
         except Exception as db_error:
-            logger.error(f"Database error: {str(db_error)}")
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
         
@@ -748,15 +803,14 @@ async def create_contact(contact: dict, db: Session = Depends(get_db), token = D
             server.login(SMTP_USER, SMTP_PASS)
             server.send_message(msg)
             server.quit()
-            logger.debug(f"Sent password email to {user.email} with password {temp_password}") 
+            add_audit_log("Email Sent", token["sub"], f"Sent password email to {user.email}")
         except Exception as email_error:
-            logger.error(f"Email error: {str(email_error)}")
+            add_audit_log("Email Error", token["sub"], f"Email error: {str(email_error)}")
             # Don't rollback DB - user is created but email failed
             
         return {"id": f"contact_{user.id}"}
         
     except Exception as e:
-        logger.error(f"Error creating contact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
 
@@ -805,6 +859,7 @@ async def delete_contact(contact_id: str, db: Session = Depends(get_db), token =
             raise HTTPException(status_code=404, detail="Contact not found")
         db.delete(user)
         db.commit()
+        add_audit_log("Delete Contact", token["sub"], f"Deleted contact: {contact_id}")
         return {"message": "Contact deleted"}
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid contact ID")
@@ -829,6 +884,7 @@ async def update_contact(contact_id: str, contact: dict, db: Session = Depends(g
         user.updated_at = datetime.utcnow()
         
         db.commit()
+        add_audit_log("Update Contact", token["sub"], f"Updated contact: {contact_id}")
         return {"message": "Contact updated"}
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid contact ID")
@@ -855,7 +911,7 @@ async def admin_reset_password(
         # Update password
         user.password_hash = hash_password(request.new_password)
         db.commit()
-        
+        add_audit_log("Admin Password Reset", admin_user.username, f"Reset password for user {user.username}")
         return {"message": f"Password reset successful for user {user.username}"}
         
     except Exception as e:
@@ -921,6 +977,7 @@ async def get_suppressions(token = Depends(verify_token)):
 async def create_suppression(rule: SuppressionRule, token = Depends(verify_token)):
     """Create new suppression rule"""
     suppressions = load_suppressions()
+    add_audit_log("Create Suppression Rule", token["sub"], f"Created suppression rule: {rule.id}")
     
     # Convert to dict and ensure proper structure
     rule_dict = {
@@ -952,6 +1009,7 @@ async def delete_suppression(rule_id: str, token = Depends(verify_token)):
     if rule_id in suppressions:
         del suppressions[rule_id]
         save_suppressions(suppressions)
+        add_audit_log("Delete Suppression Rule", token["sub"], f"Deleted suppression rule: {rule_id}")
         return {"message": "Suppression rule deleted"}
     raise HTTPException(status_code=404, detail="Rule not found")
 
@@ -987,6 +1045,7 @@ async def update_suppression(rule_id: str, rule: SuppressionRule, token = Depend
         }
         suppressions[rule_id] = rule_dict
         save_suppressions(suppressions)
+        add_audit_log("Update Suppression Rule", token["sub"], f"Updated suppression rule: {rule_id}")
         return {"message": "Suppression rule updated"}
     raise HTTPException(status_code=404, detail="Rule not found")
 
@@ -998,6 +1057,7 @@ async def login(credentials: dict, db: Session = Depends(get_db)):
     
     if verify_auth(username, password):
         token = create_access_token({"sub": username})
+        add_audit_log("User logged in", username)
         return {"token": token}
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1048,6 +1108,7 @@ def save_config(settings: Dict):
     try:
         with open('config.ini', 'w') as f:
             config.write(f)
+            add_audit_log("Config Updated by", token["sub"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving config: {str(e)}")
 
@@ -1092,6 +1153,7 @@ async def get_template(template_name: str):
 
 @app.post("/templates/{template_name}")
 async def save_template(template_name: str, template: dict):
+    add_audit_log("Save Template", token["sub"], f"Saved template: {template_name}")
     with open(f"{TEMPLATES_DIR}/{template_name}", 'w') as f:
         json.dump(template, f, indent=2)
     return {"message": "Template saved"}
@@ -1100,6 +1162,7 @@ async def save_template(template_name: str, template: dict):
 async def delete_template(template_name: str):
     try:
         os.remove(f"{TEMPLATES_DIR}/{template_name}")
+        add_audit_log("Delete Template", token["sub"], f"Deleted template: {template_name}")
         return {"message": "Template deleted"}
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Template not found")
