@@ -1,6 +1,7 @@
 # incident_server.py
 from fastapi import FastAPI, HTTPException, Depends, Security, status
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from datetime import datetime
 import asyncio
@@ -28,9 +29,11 @@ import uvicorn
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import secrets
+import ssl
+import uvicorn
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 
-
-
+#openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365 -subj "/C=DE/ST=Baden-Württemberg/L=Waldburg/O=Wazuh/CN=wazuh.local/emailAddress=fabimerz@proton.me"
 
 # Add to global variables
 LOGS_DIR = "audit_logs"
@@ -270,6 +273,15 @@ SMTP_PORT = 587  # Office365 uses port 587 for STARTTLS
 SMTP_USER = config['SMTP']['username']
 SMTP_PASS = config['SMTP']['password']
 SMTP_FROM = config['SMTP']['from']
+
+
+#tsl
+SERVER_HOST = "wazuh.local"
+SERVER_PORT = 8334
+
+SSL_KEYFILE = "key.pem"
+SSL_CERTFILE = "cert.pem"
+
 
 
 #phone controller
@@ -1171,6 +1183,48 @@ async def delete_template(template_name: str):
 async def check_admin(admin_user = Depends(is_admin)):
     return {"is_admin": True}
 
+# certificates
+@app.post("/api/certificate/generate")
+async def generate_certificate(cert_data: dict, admin_user = Depends(is_admin)):
+    try:
+        # Sanitize inputs
+        for key, value in cert_data.items():
+            if not re.match(r'^[\w\s\-\.@]+$', value):
+                raise HTTPException(status_code=400, detail=f"Invalid characters in {key}")
+        
+        subj = f"/C={cert_data['country']}/ST={cert_data['state']}/L={cert_data['city']}/O={cert_data['organization']}/CN={cert_data['common_name']}/emailAddress={cert_data['email']}"
+        
+        cmd = [
+            'openssl', 'req', '-x509', '-newkey', 'rsa:4096', '-nodes',
+            '-out', 'cert.pem', '-keyout', 'key.pem',
+            '-days', '365', '-subj', subj
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Exception(f"OpenSSL error: {result.stderr}")
+            
+        add_audit_log("Generate Certificate", admin_user["sub"], f"Generated new certificate for {cert_data['common_name']}")
+        return {"message": "Certificate generated successfully"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/certificate/download/{file_type}")
+async def download_certificate(file_type: str, admin_user = Depends(is_admin)):
+    if file_type not in ['cert', 'key']:
+        raise HTTPException(status_code=400, detail="Invalid file type")
+        
+    filename = 'cert.pem' if file_type == 'cert' else 'key.pem'
+    
+    if not os.path.exists(filename):
+        raise HTTPException(status_code=404, detail="Certificate file not found")
+        
+    add_audit_log("Download Certificate", admin_user["sub"], f"Downloaded {filename}")
+    return FileResponse(filename, filename=filename)
+
+    
+app.add_middleware(HTTPSRedirectMiddleware)
 
 # Mount static files - simplified to avoid conflicts
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
@@ -1178,4 +1232,14 @@ app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 if __name__ == "__main__":
     init_db()
-    uvicorn.run(app, host="localhost", port=8000)
+    
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain(SSL_CERTFILE, keyfile=SSL_KEYFILE)
+    
+    uvicorn.run(
+        app, 
+        host=SERVER_HOST,
+        port=SERVER_PORT,
+        ssl_keyfile=SSL_KEYFILE,
+        ssl_certfile=SSL_CERTFILE
+    )
