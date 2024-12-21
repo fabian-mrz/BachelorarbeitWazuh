@@ -2,111 +2,144 @@ import os
 import json
 import time
 import requests
-from datetime import datetime
 import pandas as pd
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from datetime import datetime
+from typing import List, Dict
+import logging
 
 # Constants
 EVENTS_DIR = './events'
 CSV_STORAGE_DIR = './static/incidents'
 INCIDENT_SERVER_URL = "http://localhost:8000/incidents/"
-# Add at top with other constants
-RULE_DELAY = 5  # 5 seconds delay between same rule events
-last_rule_events = {}  # Track last event time per rule ID
+RULE_DELAY = 5  # seconds between same rule events
+BATCH_SIZE = 100  # events to process at once
+FILE_CHECK_INTERVAL = 0.1  # seconds between file checks
 
-# Create required directories
+# Setup
 os.makedirs(CSV_STORAGE_DIR, exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def save_events_to_csv(events, incident_id):
-    """Save events to CSV file"""
-    directory = os.path.join(CSV_STORAGE_DIR, incident_id)
-    os.makedirs(directory, exist_ok=True)
-    
-    csv_path = os.path.join(directory, 'events.csv')
-    df = pd.DataFrame(events)
-    df.to_csv(csv_path, index=False)
-    
-    return f'/incidents/{incident_id}/events.csv'
+class EventProcessor:
+    def __init__(self):
+        self.last_rule_events = {}
+        self.events_buffer = {}
 
-def process_rule_events(rule_events):
-    """Process aggregated events and send incidents"""
-    if not rule_events:
-        return
+    def get_rule_id_from_filename(self, filename: str) -> str:
+        """Extract rule ID from filename"""
+        return filename.split('_')[1].split('.')[0]
+
+    def save_events_to_csv(self, events: List[Dict], rule_id: str) -> str:
+        """Save events to CSV file"""
+        incident_id = f"RULE_{rule_id}_{int(time.time())}"
+        directory = os.path.join(CSV_STORAGE_DIR, incident_id)
+        os.makedirs(directory, exist_ok=True)
+        csv_path = os.path.join(directory, 'events.csv')
         
-    first_event = rule_events[0]
-    rule_id = first_event['rule']['id']
-    current_time = time.time()
-    
-    # Check if we need to wait for this rule
-    if rule_id in last_rule_events:
-        time_since_last = current_time - last_rule_events[rule_id]
-        if time_since_last < RULE_DELAY:
-            print(f"⏳ Waiting {RULE_DELAY - time_since_last:.1f}s for rule {rule_id}")
-            time.sleep(RULE_DELAY - time_since_last)
-    
-    # Update last event time and process
-    last_rule_events[rule_id] = current_time
-    incident_id = f"{rule_id}_{int(current_time)}"
-    csv_path = save_events_to_csv(rule_events, incident_id)
-    
-    incident = {
-        "id": incident_id,
-        "timestamp": datetime.now().isoformat(),
-        "description": json.dumps({
-            "rule_id": rule_id,
-            "rule_description": first_event['rule']['description'],
-            "rule_level": first_event['rule']['level'],
-            "total_events": len(rule_events),
-            "agent_names": list(set(e['agent']['name'] for e in rule_events)),
-            "first_event_timestamp": rule_events[0]['timestamp'],
-            "last_event_timestamp": rule_events[-1]['timestamp'],
-            "sample_event": rule_events[0],
-            "csv_path": csv_path
-        }),
-        "acknowledged": False,
-        "escalated": False
-    }
-    
-    try:
-        response = requests.post(
-            INCIDENT_SERVER_URL,
-            json=incident,
-            headers={"Content-Type": "application/json"}
-        )
-        response.raise_for_status()
-        print(f"✅ Events sent for rule {rule_id}")
-    except Exception as e:
-        print(f"❌ Error sending events: {e}")
+        df = pd.DataFrame(events)
+        df.to_csv(csv_path, index=False)
+        return f'/incidents/{incident_id}/events.csv'
 
-class EventHandler(FileSystemEventHandler):
-    def on_created(self, event):
-        if event.is_directory:
-            return
-        if event.src_path.endswith('.json'):
+    def create_incident(self, events: List[Dict], rule_id: str, csv_path: str):
+        """Create incident from events"""
+        first_event = events[0]
+        incident = {
+            "id": f"RULE_{rule_id}_{int(time.time())}",
+            "timestamp": datetime.now().isoformat(),
+            "description": json.dumps({
+                "rule_id": rule_id,
+                "rule_description": first_event['rule']['description'],
+                "rule_level": first_event['rule']['level'],
+                "total_events": len(events),
+                "agent_names": list(set(e['agent']['name'] for e in events)),
+                "first_event_timestamp": events[0]['timestamp'],
+                "last_event_timestamp": events[-1]['timestamp'],
+                "sample_event": first_event,
+                "csv_path": csv_path
+            }),
+            "acknowledged": False,
+            "escalated": False
+        }
+
+        try:
+            response = requests.post(
+                INCIDENT_SERVER_URL,
+                json=incident,
+                headers={"Content-Type": "application/json"}
+            )
+            response.raise_for_status()
+            logger.info(f"✅ Created incident for rule {rule_id}")
+        except Exception as e:
+            logger.error(f"Failed to create incident: {e}")
+
+    def process_file(self, filepath: str, rule_id: str):
+        """Process single rule file"""
+        try:
+            with open(filepath, 'r') as f:
+                events = json.load(f)
+                
+                # Initialize buffer for rule if needed
+                if rule_id not in self.events_buffer:
+                    self.events_buffer[rule_id] = []
+                
+                self.events_buffer[rule_id].extend(events)
+                
+                # Process when batch size reached
+                if len(self.events_buffer[rule_id]) >= BATCH_SIZE:
+                    current_time = time.time()
+                    
+                    # Apply rate limiting
+                    if rule_id in self.last_rule_events:
+                        time_since_last = current_time - self.last_rule_events[rule_id]
+                        if time_since_last < RULE_DELAY:
+                            return
+                    
+                    self.last_rule_events[rule_id] = current_time
+                    batch = self.events_buffer[rule_id][:BATCH_SIZE]
+                    csv_path = self.save_events_to_csv(batch, rule_id)
+                    self.create_incident(batch, rule_id, csv_path)
+                    
+                    # Remove processed events
+                    self.events_buffer[rule_id] = self.events_buffer[rule_id][BATCH_SIZE:]
+                    
+                    # Clean up file if all events processed
+                    if not self.events_buffer[rule_id]:
+                        os.remove(filepath)
+                        logger.info(f"Removed processed file: {filepath}")
+                    
+        except json.JSONDecodeError:
+            logger.warning(f"Incomplete JSON in {filepath}, waiting...")
+        except Exception as e:
+            logger.error(f"Error processing {filepath}: {e}")
+
+    def monitor_directory(self):
+        """Monitor directory for new event files"""
+        logger.info(f"🔍 Monitoring {EVENTS_DIR} for rule events...")
+        
+        while True:
             try:
-                with open(event.src_path, 'r') as f:
-                    rule_events = json.load(f)
-                process_rule_events(rule_events)
-                os.remove(event.src_path)  # Clean up processed file
+                for filename in os.listdir(EVENTS_DIR):
+                    if not filename.endswith('.json'):
+                        continue
+                        
+                    filepath = os.path.join(EVENTS_DIR, filename)
+                    rule_id = self.get_rule_id_from_filename(filename)
+                    self.process_file(filepath, rule_id)
+                    
             except Exception as e:
-                print(f"Error processing file {event.src_path}: {e}")
+                logger.error(f"Directory monitoring error: {e}")
+                
+            time.sleep(FILE_CHECK_INTERVAL)
 
 def main():
-    event_handler = EventHandler()
-    observer = Observer()
-    observer.schedule(event_handler, EVENTS_DIR, recursive=False)
-    observer.start()
-    print(f"🔍 Monitoring {EVENTS_DIR} for new events...")
-    
+    processor = EventProcessor()
     try:
-        while True:
-            time.sleep(1)
+        processor.monitor_directory()
     except KeyboardInterrupt:
-        observer.stop()
-        print("\n⚡ Stopping event monitoring...")
-    
-    observer.join()
+        logger.info("⚡ Stopping event monitoring...")
 
 if __name__ == "__main__":
     main()

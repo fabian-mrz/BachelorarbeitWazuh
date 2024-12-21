@@ -7,7 +7,22 @@ from threading import Lock
 lock = Lock()
 
 def parse_date(date_str):
-    return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%f%z")
+    try:
+        if not date_str:
+            log_debug(f"Empty timestamp received")
+            return None
+        
+        # Handle various timestamp formats
+        if '+' in date_str:
+            # Format: 2024-12-19T03:22:38.652+0000
+            return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%f%z")
+        else:
+            # Format without timezone
+            return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%f")
+            
+    except ValueError as e:
+        log_debug(f"Timestamp parsing error: {str(e)} for value: {date_str}")
+        return None
 
 def read_suppressions():
     try:
@@ -71,30 +86,63 @@ def is_suppressed(alert_json, suppressions):
     return False
 
 def save_event(rule_id, alert_json):
+    # Validate timestamp before saving
+    if 'timestamp' in alert_json:
+        parsed_time = parse_date(alert_json['timestamp'])
+        if not parsed_time:
+            log_debug(f"Invalid timestamp in alert: {alert_json['timestamp']}")
+            alert_json['timestamp'] = datetime.now().isoformat()
+            
     events_dir = '/var/ossec/integrations/events'
     if not os.path.exists(events_dir):
         os.makedirs(events_dir)
+        log_debug(f"Created events directory: {events_dir}")
     
     file_path = os.path.join(events_dir, f'events_{rule_id}.json')
     with lock:
-        if os.path.exists(file_path):
-            with open(file_path, 'r+') as file:
-                data = json.load(file)
-                data.append(alert_json)
-                file.seek(0)
-                json.dump(data, file)
-        else:
-            with open(file_path, 'w') as file:
-                json.dump([alert_json], file)
+        try:
+            if os.path.exists(file_path):
+                log_debug(f"Updating existing file: {file_path}")
+                with open(file_path, 'r+') as file:
+                    log_debug(f"Current file content: {file.read()}")
+                    file.seek(0)
+                    data = json.load(file)
+                    data.append(alert_json)
+                    file.seek(0)
+                    json.dump(data, file)
+                    log_debug(f"Updated file with new alert")
+            else:
+                log_debug(f"Creating new file: {file_path}")
+                with open(file_path, 'w') as file:
+                    json.dump([alert_json], file)
+                    log_debug(f"Created new file with alert")
+        except json.JSONDecodeError as e:
+            log_debug(f"JSON error in file {file_path}: {str(e)}")
+            raise
+        except Exception as e:
+            log_debug(f"File operation error: {str(e)}")
+            raise
 
 # Main execution
 try:
     alert_file = open(sys.argv[1])
-    alert_json = json.loads(alert_file.read())
+    log_debug(f"Reading alert file: {sys.argv[1]}")
+    alert_content = alert_file.read()
+    log_debug(f"Alert content: {alert_content}")
+    alert_json = json.loads(alert_content)
     alert_file.close()
 
+    # Validate timestamp immediately after parsing
+    if 'timestamp' in alert_json:
+        log_debug(f"Validating timestamp: {alert_json['timestamp']}")
+        if not parse_date(alert_json['timestamp']):
+            log_debug(f"Using current timestamp instead")
+            alert_json['timestamp'] = datetime.now().isoformat()
+
     suppressions = read_suppressions()
+    log_debug(f"Loaded suppressions: {json.dumps(suppressions, indent=2)}")
     log_debug(f"Processing alert for rule ID: {alert_json['rule']['id']}")
+    log_debug(f"Alert data: {json.dumps(alert_json, indent=2)}")
 
     if not is_suppressed(alert_json, suppressions):
         save_event(alert_json["rule"]["id"], alert_json)
@@ -102,6 +150,9 @@ try:
     else:
         log_debug(f"Event suppressed for rule ID: {alert_json['rule']['id']}")
 
+except json.JSONDecodeError as e:
+    log_debug(f"JSON parsing error: {str(e)}")
+    sys.exit(1)
 except Exception as e:
     log_debug(f"Error processing alert: {str(e)}")
     sys.exit(1)
