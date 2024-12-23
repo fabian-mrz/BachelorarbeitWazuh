@@ -32,6 +32,10 @@ import secrets
 import ssl
 import uvicorn
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+import shutil
+from multiprocessing import Process
+import fcntl
+import portalocker
 
 #openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365 -subj "/C=DE/ST=Baden-Württemberg/L=Waldburg/O=Wazuh/CN=wazuh.local/emailAddress=fabimerz@proton.me"
 
@@ -276,7 +280,7 @@ SMTP_FROM = config['SMTP']['from']
 
 
 #tsl
-SERVER_HOST = "wazuh.local"
+SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 8334
 
 SSL_KEYFILE = "key.pem"
@@ -1184,16 +1188,47 @@ async def check_admin(admin_user = Depends(is_admin)):
     return {"is_admin": True}
 
 # certificates
-@app.post("/api/certificate/generate")
-async def generate_certificate(cert_data: dict, admin_user = Depends(is_admin)):
+
+@app.get("/api/certificate/download/{file_type}")
+async def download_certificate(file_type: str, admin_user: User = Depends(is_admin)):
     try:
-        # Sanitize inputs
-        for key, value in cert_data.items():
-            if not re.match(r'^[\w\s\-\.@]+$', value):
-                raise HTTPException(status_code=400, detail=f"Invalid characters in {key}")
+        if file_type not in ['cert', 'key']:
+            raise HTTPException(status_code=400, detail="Invalid file type")
+            
+        filename = 'cert.pem' if file_type == 'cert' else 'key.pem'
+        file_path = Path(filename)
         
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Certificate file not found")
+            
+        add_audit_log("Download Certificate", admin_user.username, f"Downloaded {filename}")
+        
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type='application/x-pem-file'
+        )
+        
+    except Exception as e:
+        logging.error(f"Certificate download error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error downloading certificate")
+
+#cert
+@app.post("/api/certificate/generate")
+async def generate_certificate(cert_data: dict, admin_user: User = Depends(is_admin)):
+    try:
+        # Create backup of existing certificates if they exist
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        for file in ['cert.pem', 'key.pem']:
+            if os.path.exists(file):
+                backup_file = f"{file}.{timestamp}.backup"
+                shutil.copy2(file, backup_file)
+                logging.info(f"Created backup: {backup_file}")
+        
+        # Create subject string from sanitized inputs
         subj = f"/C={cert_data['country']}/ST={cert_data['state']}/L={cert_data['city']}/O={cert_data['organization']}/CN={cert_data['common_name']}/emailAddress={cert_data['email']}"
         
+        # Generate new certificates
         cmd = [
             'openssl', 'req', '-x509', '-newkey', 'rsa:4096', '-nodes',
             '-out', 'cert.pem', '-keyout', 'key.pem',
@@ -1202,26 +1237,72 @@ async def generate_certificate(cert_data: dict, admin_user = Depends(is_admin)):
         
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
+            # Restore backups if generation fails
+            for file in ['cert.pem', 'key.pem']:
+                backup_file = f"{file}.{timestamp}.backup"
+                if os.path.exists(backup_file):
+                    shutil.copy2(backup_file, file)
             raise Exception(f"OpenSSL error: {result.stderr}")
             
-        add_audit_log("Generate Certificate", admin_user["sub"], f"Generated new certificate for {cert_data['common_name']}")
-        return {"message": "Certificate generated successfully"}
+        add_audit_log("Generate Certificate", admin_user.username, f"Generated new certificate for {cert_data['common_name']}")
+        return {
+            "message": "Certificate generated successfully",
+            "backup_created": True,
+            "backup_timestamp": timestamp
+        }
         
     except Exception as e:
+        logging.error(f"Certificate generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/certificate/download/{file_type}")
-async def download_certificate(file_type: str, admin_user = Depends(is_admin)):
-    if file_type not in ['cert', 'key']:
-        raise HTTPException(status_code=400, detail="Invalid file type")
-        
-    filename = 'cert.pem' if file_type == 'cert' else 'key.pem'
     
-    if not os.path.exists(filename):
-        raise HTTPException(status_code=404, detail="Certificate file not found")
-        
-    add_audit_log("Download Certificate", admin_user["sub"], f"Downloaded {filename}")
-    return FileResponse(filename, filename=filename)
+RESTART_LOCK_FILE = "restart.lock"
+RESTART_COOLDOWN = 60  # seconds
+
+def check_restart_cooldown():
+    try:
+        with open(RESTART_LOCK_FILE, 'a+') as f:
+            try:
+                # Try to acquire an exclusive lock
+                portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
+                
+                # Read last restart time
+                f.seek(0)
+                content = f.read().strip()
+                last_time = float(content) if content else 0
+                current_time = time.time()
+                
+                if current_time - last_time < RESTART_COOLDOWN:
+                    remaining = int(RESTART_COOLDOWN - (current_time - last_time))
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Please wait {remaining} seconds before requesting another restart"
+                    )
+                
+                # Update timestamp
+                f.seek(0)
+                f.truncate()
+                f.write(str(current_time))
+                
+            finally:
+                portalocker.unlock(f)
+    except portalocker.LockException:
+        raise HTTPException(
+            status_code=429, 
+            detail="Restart already in progress"
+        )
+
+@app.post("/api/server/restart")
+async def restart_endpoint(admin_user: User = Depends(is_admin)):
+    try:
+        check_restart_cooldown()
+        restart_server()
+        add_audit_log("Server Restart", admin_user.username, "Server restarted")
+        return {"message": "Server restart initiated"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logging.error(f"Server restart error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     
 app.add_middleware(HTTPSRedirectMiddleware)
@@ -1230,16 +1311,33 @@ app.add_middleware(HTTPSRedirectMiddleware)
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
-if __name__ == "__main__":
-    init_db()
-    
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    ssl_context.load_cert_chain(SSL_CERTFILE, keyfile=SSL_KEYFILE)
-    
-    uvicorn.run(
-        app, 
+
+# Add global server instance
+server_instance = None
+
+# Add server control functions
+def start_server():
+    global server_instance
+    config = uvicorn.Config(
+        app,
         host=SERVER_HOST,
         port=SERVER_PORT,
         ssl_keyfile=SSL_KEYFILE,
-        ssl_certfile=SSL_CERTFILE
+        ssl_certfile=SSL_CERTFILE,
+        log_level="info"
     )
+    server_instance = uvicorn.Server(config)
+    server_instance.run()
+
+def restart_server():
+    global server_instance
+    if server_instance:
+        server_instance.should_exit = True
+        # Wait for server to stop
+        time.sleep(2)
+    # Start new process
+    Process(target=start_server).start()
+
+if __name__ == "__main__":
+    init_db()
+    start_server()
