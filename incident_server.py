@@ -36,6 +36,7 @@ import shutil
 from multiprocessing import Process
 import fcntl
 import portalocker
+import socket
 
 #openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365 -subj "/C=DE/ST=Baden-Württemberg/L=Waldburg/O=Wazuh/CN=wazuh.local/emailAddress=fabimerz@proton.me"
 
@@ -1311,11 +1312,6 @@ app.add_middleware(HTTPSRedirectMiddleware)
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
-
-# Add global server instance
-server_instance = None
-
-# Add server control functions
 def start_server():
     global server_instance
     config = uvicorn.Config(
@@ -1328,15 +1324,6 @@ def start_server():
     )
     server_instance = uvicorn.Server(config)
     server_instance.run()
-
-def restart_server():
-    global server_instance
-    if server_instance:
-        server_instance.should_exit = True
-        # Wait for server to stop
-        time.sleep(2)
-    # Start new process
-    Process(target=start_server).start()
 
 if __name__ == "__main__":
     init_db()

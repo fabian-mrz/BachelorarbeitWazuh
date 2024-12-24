@@ -306,6 +306,38 @@
     </div>
     <div class="config-section">
         <h2>Certificate Management</h2>
+        <div class="info-panel">
+            <h3>How to Update SSL Certificate</h3>
+            <ol>
+                <li>Fill out all fields below:
+                    <ul>
+                        <li>Country: Two letter code (e.g., DE for Germany)</li>
+                        <li>State/Province: Your state (e.g., Baden-Württemberg)</li>
+                        <li>City: Your city location</li>
+                        <li>Organization: Your company name</li>
+                        <li>Common Name: Must match your server hostname (default: wazuhserver)</li>
+                        <li>Email: Valid contact email</li>
+                    </ul>
+                </li>
+                <li>Click "Generate Certificate" and wait for confirmation</li>
+                <li>Download the new certificate using "Download Certificate"</li>
+                <li>On your client system:
+                    <ul>
+                        <li>Add the certificate to your trusted certificates</li>
+                        <li>Windows: Import to "Trusted Root Certification Authorities"</li>
+                        <li>macOS: Add to Keychain and trust</li>
+                        <li>Linux: Add to /usr/local/share/ca-certificates/ and run sudo update-ca-certificates</li>
+                    </ul>
+                </li>
+                <li>Restart the server:
+                    <pre>Restart VM</pre>
+                </li>
+            </ol>
+            <div class="warning-note">
+                Note: If you change the Common Name, ensure it matches your server's hostname. 
+                Update your local hosts file (/etc/hosts) with the new hostname if needed.
+            </div>
+        </div>
         <div class="config-group">
             <label>Country (2 letters):</label>
             <input type="text" id="cert_country" maxlength="2" pattern="[A-Za-z]{2}">
@@ -333,7 +365,6 @@
         <div class="button-group">
             <button class="edit-btn" id="generate_cert">Generate Certificate</button>
             <button class="save-btn" id="download_cert">Download Certificate</button>
-            <button onclick="restartServer()" class="delete-btn">Restart Server</button>
         </div>
         <div id="cert_status" class="status-message"></div>
     </div>
@@ -388,7 +419,7 @@
                 }
 
                 const statusDiv = document.getElementById('cert_status');
-                statusDiv.textContent = 'Certificate generated successfully';
+                statusDiv.textContent = 'Certificate generated successfully. Please restart Server to apply changes and check hostfile';
                 statusDiv.className = 'status-message success';
             } catch (error) {
                 const statusDiv = document.getElementById('cert_status');
@@ -683,19 +714,6 @@
             }
         }
 
-        // Add to frontend JavaScript
-async function restartServer() {
-    try {
-        await fetch('/api/server/restart', {
-            method: 'POST',
-            headers: getAuthHeaders()
-        });
-        alert('Server restart initiated. Please wait a few seconds and refresh the page.');
-    } catch (error) {
-        console.error('Server restart failed:', error);
-        alert('Server restart failed. Check console for details.');
-    }
-}
 
         window.onload = function () {
             const token = localStorage.getItem('token');
