@@ -36,8 +36,7 @@ class IncidentModel(Base):
     update_count = Column(Integer, default=0)
     archived_version = relationship("ArchivedIncidentModel", back_populates="original_incident", uselist=False)
 
-    
-    
+        
     
 
 class ArchivedIncidentModel(Base):

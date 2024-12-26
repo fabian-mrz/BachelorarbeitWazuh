@@ -298,8 +298,7 @@ phone_controller = LinphoneController(
 )
 
 
-# In-memory storage (replace with database in production)
-incidents = {}
+
 
 class Incident(BaseModel):
     id: str
@@ -676,33 +675,50 @@ async def create_incident(incident: Incident, db: Session = Depends(get_incident
         incident_data = json.loads(incident.description)
         rule_id = incident_data['rule_id']
         
-        # Check for existing active incident using JSON string comparison
+        # Check for existing unarchived incident with same rule_id
         existing = db.query(IncidentModel).filter(
-            IncidentModel.description.like(f'%"rule_id": {rule_id}%'),
+            IncidentModel.description.like(f'%"rule_id": "{rule_id}"%'),
             IncidentModel.archived == False
         ).first()
         
         if existing:
+            # Update existing incident
             existing.update_count += 1
             existing.description = incident_data
+            
+            # Keep acknowledgement status
+            if not existing.acknowledged:
+                existing.acknowledged = incident.acknowledged
+                existing.acknowledged_by = incident.acknowledged_by
+            
+            # Update escalation if needed    
+            if not existing.escalated:
+                existing.escalated = incident.escalated
+                
             db.commit()
+            
+            print(f"📝 Updated existing incident: {existing.id} (update #{existing.update_count})")
+            
+            # Trigger notifications for update
+            asyncio.create_task(send_notifications(existing.id))
+            
             return {"message": "Incident updated", "id": existing.id}
             
-        # Create new incident if none exists
+        # Create new incident if no active incident exists
         db_incident = IncidentModel(
             id=incident.id,
             title=incident.title,
             description=incident_data,
-            severity=incident.severity,
+            severity=incident.severity, 
             source=incident.source,
             acknowledged=incident.acknowledged,
             acknowledged_by=incident.acknowledged_by,
             escalated=incident.escalated,
             created_at=incident.created_at,
-            archived=incident.archived,
-            archived_at=incident.archived_at,
-            archived_by=incident.archived_by,
-            update_count=incident.update_count
+            archived=False,
+            archived_at=None,
+            archived_by=None,
+            update_count=0
         )
         
         db.add(db_incident)
