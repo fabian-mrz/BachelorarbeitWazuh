@@ -102,34 +102,41 @@
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const incidents = await response.json();
+            console.log('Archived Incidents:', incidents);
+
             const table = document.getElementById('archived-incidents');
             table.innerHTML = `
-                    <tr>
-                        <th>Created</th>
-                        <th>Archived</th>
-                        <th>Description</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                `;
+            <tr>
+                <th>Created</th>
+                <th>Archived</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        `;
 
-            for (const [id, incident] of Object.entries(incidents)) {
-                const details = parseDescription(incident.description);
+            for (const incident of incidents) {
+                const details = typeof incident.description === 'string'
+                    ? parseDescription(incident.description)
+                    : incident.description;
+
                 const row = table.insertRow();
                 row.innerHTML = `
-                        <td>${incident.created_at}</td>
-                        <td>${incident.archived_at}</td>
-                        <td>${details.rule_description}</td>
-                        <td>Archived by ${incident.archived_by}</td>
-                        <td>
-                            <button class="edit-btn" onclick="window.location.href='/detail.html?id=${id}'">
-                                Show Details
-                            </button>
-                        </td>
-                    `;
+                <td>${new Date(incident.created_at).toLocaleString()}</td>
+                <td>${new Date(incident.archived_at).toLocaleString()}</td>
+                <td>${details.rule_description}</td>
+                <td>Archived by ${incident.archived_by}</td>
+                <td>
+                    <button class="edit-btn" onclick="window.location.href='/detail.html?id=${incident.id}'">
+                        Show Details
+                    </button>
+                </td>
+            `;
             }
         } catch (error) {
             console.error('Error loading archived incidents:', error);
+            const table = document.getElementById('archived-incidents');
+            table.innerHTML = `<tr><td colspan="5">Error loading archived incidents: ${error.message}</td></tr>`;
         }
     }
 

@@ -10,7 +10,7 @@ import logging
 from jwt import ExpiredSignatureError, InvalidTokenError
 from functools import wraps
 import time
-from database import get_db
+from database import get_users_db
 from models import User
 
 
@@ -89,7 +89,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
         )
     
 def is_admin(token = Depends(verify_token)):
-    db = next(get_db())
+    db = next(get_users_db())
     user = db.query(User).filter(User.username == token.get("sub")).first()
     if not user or user.role != "admin":
         raise HTTPException(
@@ -100,14 +100,14 @@ def is_admin(token = Depends(verify_token)):
 
 
 def verify_auth(username: str, password: str):
-    db = next(get_db())
+    db = next(get_users_db())
     user = db.query(User).filter(User.username == username).first()
     if not user:
         return False
     return verify_password(password, user.password_hash)
 
 def register_user(username: str, password: str, role: str = None):
-    db = next(get_db())
+    db = next(get_users_db())
     
     # Validate role as string
     valid_roles = ["admin", "analyst"]

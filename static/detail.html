@@ -100,12 +100,16 @@
                     return;
                 }
 
-                const details = JSON.parse(incident.description);
+                const details = incident.description; // Already an object, no need to parse
                 const detailsTable = document.getElementById('details');
 
                 // Add basic incident info
-                addRow('Incident ID', incidentId);
+                addRow('Incident ID', incident.id);
+                addRow('Title', incident.title || 'N/A');
                 addRow('Created At', new Date(incident.created_at).toLocaleString());
+                addRow('Severity', incident.severity || 'N/A');
+                addRow('Source', incident.source || 'N/A');
+                addRow('Update Count', incident.update_count);
 
                 // Status information
                 let status = 'Pending';
@@ -118,31 +122,31 @@
                 }
                 addRow('Status', status);
 
-                // Add CSV download if available
-                if (details.csv_path) {
-                    addRow('CSV Export', `<a href="${details.csv_path}" class="edit-btn" download>Download Events CSV</a>`);
-                }
+                // Add detailed information from description
+                if (details) {
+                    addRow('Rule ID', details.rule_id);
+                    addRow('Rule Description', details.rule_description);
+                    addRow('Rule Level', details.rule_level);
+                    addRow('Total Events', details.total_events);
+                    addRow('Agent Names', details.agent_names?.join(', ') || 'N/A');
+                    addRow('First Event', new Date(details.first_event_timestamp).toLocaleString());
+                    addRow('Last Event', new Date(details.last_event_timestamp).toLocaleString());
 
-                // Add parsed details
-                for (const [key, value] of Object.entries(details)) {
-                    if (key === 'csv_path') continue;
-                    if (key === 'sample_event') {
-                        addRow(key, `<pre>${JSON.stringify(value, null, 2)}</pre>`);
-                    } else if (Array.isArray(value)) {
-                        addRow(key, value.join(', '));
-                    } else {
-                        addRow(key, value);
+                    if (details.sample_event) {
+                        addRow('Sample Event', `<pre>${JSON.stringify(details.sample_event, null, 2)}</pre>`);
+                    }
+
+                    if (details.csv_path) {
+                        addRow('CSV Export', `<a href="${details.csv_path}" class="edit-btn" download>Download Events CSV</a>`);
                     }
                 }
 
-                // Store sample event for suppression creation
-                if (details.sample_event) {
-                    sampleEvent = details.sample_event;
-                }
+                // Store sample event for rule creation
+                sampleEvent = details.sample_event;
 
             } catch (error) {
-                console.error('Error:', error);
-                document.body.innerHTML = '<h1>Error loading incident details</h1>';
+                console.error('Error loading incident details:', error);
+                document.body.innerHTML = `<h1>Error loading incident details</h1><p>${error.message}</p>`;
             }
         }
 

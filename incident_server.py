@@ -20,8 +20,8 @@ from pathlib import Path
 import threading
 import re
 from auth import verify_auth, create_access_token, verify_token, is_admin
-from database import SessionLocal, Base, engine, get_db
-from models import User
+from database import Base, get_incidents_db, get_users_db, users_engine, incidents_engine
+from models import User, IncidentModel, ArchivedIncidentModel
 import bcrypt
 import logging
 from sqlalchemy.orm import Session
@@ -59,9 +59,9 @@ def add_audit_log(action: str, user: str = None, details: str = None):
         f.write(json.dumps(log_entry) + '\n')
 
 
-
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(users_engine)
+    Base.metadata.create_all(incidents_engine)
     
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -513,14 +513,74 @@ async def send_telegram_notification(message: str, csv_path: str = None):
 
 
 ##update incidents
-async def find_active_incident(rule_id: str) -> Optional[str]:
-    for id, incident in incidents.items():
-        incident_data = json.loads(incident.description)
-        if (incident_data.get('rule_id') == rule_id and 
-            not incident.archived):  # Only check non-archived incidents
-            return id
+# Base CRUD Operations
+async def create_db_incident(incident_data: dict, db: Session):
+    db_incident = IncidentModel(**incident_data)
+    db.add(db_incident)
+    db.commit()
+    db.refresh(db_incident)
+    return db_incident
+
+async def get_db_incident(incident_id: str, db: Session):
+    return db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
+
+async def update_db_incident(incident_id: str, update_data: dict, db: Session):
+    incident = await get_db_incident(incident_id, db)
+    if incident:
+        for key, value in update_data.items():
+            setattr(incident, key, value)
+        db.commit()
+        db.refresh(incident)
+    return incident
+
+# Search Functions
+async def find_active_incident(rule_id: str, db: Session):
+    return db.query(IncidentModel).filter(
+        IncidentModel.description.like(f'%"rule_id": "{rule_id}"%'),
+        IncidentModel.archived == False
+    ).first()
+
+async def find_incidents_by_severity(severity: int, db: Session):
+    return db.query(IncidentModel).filter(
+        IncidentModel.severity == severity,
+        IncidentModel.archived == False
+    ).all()
+
+# Archive Functions
+async def archive_db_incident(incident_id: str, user: str, db: Session):
+    incident = await get_db_incident(incident_id, db)
+    if incident:
+        incident.archived = True
+        incident.archived_at = datetime.now()
+        incident.archived_by = user
+        db.commit()
+        return incident
     return None
 
+async def get_archived_incidents(db: Session):
+    return db.query(IncidentModel).filter(IncidentModel.archived == True).all()
+
+# Status Management
+async def acknowledge_db_incident(incident_id: str, user: str, db: Session):
+    incident = await get_db_incident(incident_id, db)
+    if incident:
+        incident.acknowledged = True
+        incident.acknowledged_by = user
+        db.commit()
+        return incident
+    return None
+
+async def escalate_db_incident(incident_id: str, db: Session):
+    incident = await get_db_incident(incident_id, db)
+    if incident:
+        incident.escalated = True
+        db.commit()
+        return incident
+    return None
+
+
+
+################# wrong code
 async def update_incident(incident_id: str, new_data: dict) -> None:
     try:
         incident = incidents[incident_id]
@@ -609,22 +669,44 @@ async def make_phone_call(contact: dict, message: str) -> bool:
 
 ### routes
 
-# incidents
-
+#incidents
 @app.post("/incidents/")
-async def create_incident(incident: Incident):
+async def create_incident(incident: Incident, db: Session = Depends(get_incidents_db)):
     try:
         incident_data = json.loads(incident.description)
         rule_id = incident_data['rule_id']
         
-        # Check for existing active incident
-        existing_id = await find_active_incident(rule_id)
-        if existing_id:
-            await update_incident(existing_id, incident_data)
-            return {"message": "Incident updated", "id": existing_id}
+        # Check for existing active incident using JSON string comparison
+        existing = db.query(IncidentModel).filter(
+            IncidentModel.description.like(f'%"rule_id": {rule_id}%'),
+            IncidentModel.archived == False
+        ).first()
+        
+        if existing:
+            existing.update_count += 1
+            existing.description = incident_data
+            db.commit()
+            return {"message": "Incident updated", "id": existing.id}
             
         # Create new incident if none exists
-        incidents[incident.id] = incident
+        db_incident = IncidentModel(
+            id=incident.id,
+            title=incident.title,
+            description=incident_data,
+            severity=incident.severity,
+            source=incident.source,
+            acknowledged=incident.acknowledged,
+            acknowledged_by=incident.acknowledged_by,
+            escalated=incident.escalated,
+            created_at=incident.created_at,
+            archived=incident.archived,
+            archived_at=incident.archived_at,
+            archived_by=incident.archived_by,
+            update_count=incident.update_count
+        )
+        
+        db.add(db_incident)
+        db.commit()
         print(f"📝 New incident created: {incident.id}")
         
         # Start notification handling in background
@@ -632,47 +714,136 @@ async def create_incident(incident: Incident):
         
         return {"message": "Incident created", "id": incident.id}
         
+    except json.JSONDecodeError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid JSON in description")
     except Exception as e:
+        db.rollback()
         print(f"Error creating/updating incident: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/incidents/{incident_id}/acknowledge")
-async def acknowledge_incident(incident_id: str, token = Depends(verify_token)):
-    if incident_id not in incidents:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    
-    incident = incidents[incident_id]
-    if not incident.escalated:
+async def acknowledge_incident(
+    incident_id: str, 
+    token = Depends(verify_token),
+    db: Session = Depends(get_incidents_db)
+):
+    try:
+        incident = db.query(IncidentModel).filter(
+            IncidentModel.id == incident_id
+        ).first()
+        
+        if not incident:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Incident {incident_id} not found"
+            )
+        
+        if incident.escalated:
+            return {"message": "Incident already escalated"}
+            
+        # Update incident
         incident.acknowledged = True
-        # Extract username from token and store it
-        incident.acknowledged_by = token["sub"]  # token contains username in "sub" field
-        add_audit_log("Acknowledge Incident", token["sub"], f"Incident ID: {incident_id}")
+        incident.acknowledged_by = token["sub"]
+        
+        db.commit()
+        
+        # Audit log
+        add_audit_log(
+            "Acknowledge Incident", 
+            token["sub"], 
+            f"Incident ID: {incident_id}"
+        )
+        
         print(f"✅ Incident {incident_id} acknowledged by {incident.acknowledged_by}")
-        return {"message": f"Incident acknowledged by {incident.acknowledged_by}"}
-    else:
-        return {"message": "Incident already escalated"}
+        
+        return {
+            "message": f"Incident acknowledged by {incident.acknowledged_by}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error acknowledging incident: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Error acknowledging incident"
+        )
 
 @app.get("/incidents/")
-async def list_incidents(token = Depends(verify_token)):
-    return {id: incident for id, incident in incidents.items() 
-            if not incident.archived}
+async def list_incidents(
+    db: Session = Depends(get_incidents_db),
+    token = Depends(verify_token)
+):
+    try:
+        incidents = db.query(IncidentModel).filter(
+            IncidentModel.archived == False
+        ).all()
+        
+        # Convert SQLAlchemy objects to dict for JSON serialization
+        return [
+            {
+                "id": incident.id,
+                "title": incident.title,
+                "description": incident.description,
+                "severity": incident.severity,
+                "source": incident.source,
+                "acknowledged": incident.acknowledged,
+                "acknowledged_by": incident.acknowledged_by,
+                "escalated": incident.escalated,
+                "created_at": incident.created_at,
+                "archived": incident.archived,
+                "archived_at": incident.archived_at,
+                "archived_by": incident.archived_by,
+                "update_count": incident.update_count
+            }
+            for incident in incidents
+        ]
+    except Exception as e:
+        print(f"Error fetching incidents: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching incidents")
 
 @app.get("/incidents/{incident_id}")
-async def get_incident(incident_id: str, token = Depends(verify_token)):
-    # Check active incidents first
-    if incident_id in incidents:
-        add_audit_log("Get Incident", token["sub"], f"Incident ID: {incident_id}")
-        return incidents[incident_id]
-    
-    # Then check archived incidents
-    if incident_id in archived_incidents:
-        add_audit_log("Get Archived Incident", token["sub"], f"Incident ID: {incident_id}")
-        return archived_incidents[incident_id]
+async def get_incident(
+    incident_id: str, 
+    token = Depends(verify_token),
+    db: Session = Depends(get_incidents_db)
+):
+    try:
+        incident = db.query(IncidentModel).filter(
+            IncidentModel.id == incident_id
+        ).first()
         
-    raise HTTPException(
-        status_code=404, 
-        detail=f"Incident {incident_id} not found"
-    )
+        if not incident:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Incident {incident_id} not found"
+            )
+            
+        add_audit_log("Get Incident", token["sub"], f"Incident ID: {incident_id}")
+        
+        return {
+            "id": incident.id,
+            "title": incident.title,
+            "description": incident.description,
+            "severity": incident.severity,
+            "source": incident.source,
+            "acknowledged": incident.acknowledged,
+            "acknowledged_by": incident.acknowledged_by,
+            "escalated": incident.escalated,
+            "created_at": incident.created_at,
+            "archived": incident.archived,
+            "archived_at": incident.archived_at,
+            "archived_by": incident.archived_by,
+            "update_count": incident.update_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching incident: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 #audit log
@@ -714,25 +885,70 @@ async def clear_audit_logs(token = Depends(verify_token)):
 
 #archive 
 @app.get("/incidents/archived/")
-async def list_archived_incidents(token = Depends(verify_token)):
-    return archived_incidents
+async def list_archived_incidents(
+    token = Depends(verify_token),
+    db: Session = Depends(get_incidents_db)
+):
+    try:
+        archived = db.query(IncidentModel).filter(
+            IncidentModel.archived == True
+        ).all()
+        
+        add_audit_log("List Archived Incidents", token["sub"])
+        
+        return [
+            {
+                "id": incident.id,
+                "title": incident.title,
+                "description": incident.description,
+                "severity": incident.severity,
+                "source": incident.source,
+                "acknowledged": incident.acknowledged,
+                "acknowledged_by": incident.acknowledged_by,
+                "escalated": incident.escalated,
+                "created_at": incident.created_at,
+                "archived": incident.archived,
+                "archived_at": incident.archived_at,
+                "archived_by": incident.archived_by,
+                "update_count": incident.update_count
+            }
+            for incident in archived
+        ]
+    except Exception as e:
+        print(f"Error listing archived incidents: {e}")
+        raise HTTPException(status_code=500, detail="Error listing archived incidents")
 
 @app.post("/incidents/{incident_id}/archive")
-async def archive_incident(incident_id: str, token = Depends(verify_token)):
-    if incident_id not in incidents:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    
-    incident = incidents[incident_id]
-    incident.archived = True
-    incident.archived_at = datetime.now()
-    incident.archived_by = token["sub"]
-    
-    # Move to archive dictionary
-    archived_incidents[incident_id] = incidents.pop(incident_id)
-    
-    print(f"📦 Incident {incident_id} archived by {incident.archived_by}")
-    add_audit_log("Archive Incident", token["sub"], f"Incident ID: {incident_id}")
-    return {"message": f"Incident archived by {incident.archived_by}"}
+async def archive_incident(
+    incident_id: str, 
+    token = Depends(verify_token),
+    db: Session = Depends(get_incidents_db)
+):
+    try:
+        incident = db.query(IncidentModel).filter(
+            IncidentModel.id == incident_id
+        ).first()
+        
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        incident.archived = True
+        incident.archived_at = datetime.now()
+        incident.archived_by = token["sub"]
+        
+        db.commit()
+        
+        print(f"📦 Incident {incident_id} archived by {incident.archived_by}")
+        add_audit_log("Archive Incident", token["sub"], f"Incident ID: {incident_id}")
+        
+        return {"message": f"Incident archived by {incident.archived_by}"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error archiving incident: {e}")
+        raise HTTPException(status_code=500, detail="Error archiving incident")
 
 
 
@@ -757,7 +973,7 @@ def generate_password():
 
 # Updated endpoints
 @app.get("/api/contacts")
-async def get_contacts(db: Session = Depends(get_db), token = Depends(verify_token)):
+async def get_contacts(db: Session = Depends(get_users_db), token = Depends(verify_token)):
     try:
         users = db.query(User).all()
         return {
@@ -777,7 +993,7 @@ async def get_contacts(db: Session = Depends(get_db), token = Depends(verify_tok
 
 
 @app.post("/api/contacts")
-async def create_contact(contact: dict, db: Session = Depends(get_db), token = Depends(verify_token)):
+async def create_contact(contact: dict, db: Session = Depends(get_users_db), token = Depends(verify_token)):
     try:
         # Debug logging
         add_audit_log("Create Contact by", token["sub"], f"Creating contact: {contact}")
@@ -845,7 +1061,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 @app.post("/api/change-password")
 async def change_password(
     request: PasswordChangeRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_users_db),
     token = Depends(verify_token)
 ):
     try:
@@ -868,7 +1084,7 @@ async def change_password(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/contacts/{contact_id}")
-async def delete_contact(contact_id: str, db: Session = Depends(get_db), token = Depends(verify_token)):
+async def delete_contact(contact_id: str, db: Session = Depends(get_users_db), token = Depends(verify_token)):
     try:
         user_id = int(contact_id.replace("contact_", ""))
         user = db.query(User).filter(User.id == user_id).first()
@@ -885,7 +1101,7 @@ async def delete_contact(contact_id: str, db: Session = Depends(get_db), token =
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/contacts/{contact_id}")
-async def update_contact(contact_id: str, contact: dict, db: Session = Depends(get_db), token = Depends(verify_token)):
+async def update_contact(contact_id: str, contact: dict, db: Session = Depends(get_users_db), token = Depends(verify_token)):
     try:
         user_id = int(contact_id.replace("contact_", ""))
         user = db.query(User).filter(User.id == user_id).first()
@@ -916,7 +1132,7 @@ class PasswordResetRequest(BaseModel):
 async def admin_reset_password(
     user_id: int,
     request: PasswordResetRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_users_db),
     admin_user: User = Depends(is_admin)
 ):
     try:
@@ -943,7 +1159,7 @@ class UserResponse(BaseModel):
 @app.get("/api/users", response_model=List[UserResponse])
 async def get_users(admin_user: User = Depends(is_admin)):
     try:
-        db = next(get_db())
+        db = next(get_users_db())
         users = db.query(User).all()
         return [
             UserResponse(
@@ -968,7 +1184,7 @@ def load_suppressions() -> dict:
 #load contacts from users.db
 def load_contacts() -> dict:
     """Load contacts from users.db"""
-    db = next(get_db())
+    db = next(get_users_db())
     users = db.query(User).all()
     return {
         f"contact_{user.id}": {
@@ -1068,7 +1284,7 @@ async def update_suppression(rule_id: str, rule: SuppressionRule, token = Depend
 
 # Login endpoint with database dependency
 @app.post("/api/login")
-async def login(credentials: dict, db: Session = Depends(get_db)):
+async def login(credentials: dict, db: Session = Depends(get_users_db)):
     username = credentials.get("username")
     password = credentials.get("password")
     
