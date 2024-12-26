@@ -992,60 +992,91 @@ async def get_contacts(db: Session = Depends(get_users_db), token = Depends(veri
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ContactCreate(BaseModel):
+    name: str
+    email: str
+    phone: str | None = None
+    department: str | None = None
+    role: str = "analyst"
+
+def generate_password(length=12):
+    import secrets
+    import string
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 @app.post("/api/contacts")
-async def create_contact(contact: dict, db: Session = Depends(get_users_db), token = Depends(verify_token)):
+async def create_contact(
+    contact: ContactCreate,
+    db: Session = Depends(get_users_db),
+    token = Depends(verify_token)
+):
     try:
-        # Debug logging
-        add_audit_log("Create Contact by", token["sub"], f"Creating contact: {contact}")
+        # Debug logging with model_dump instead of dict
+        print(f"Attempting to create contact: {contact.model_dump()}")
         
-        # Generate initial password
-        temp_password = generate_password()
-        
-        # Create user object
-        user = User(
-            username=contact["email"],
-            name=contact["name"],
-            email=contact["email"],
-            phone=contact.get("phone"),
-            department=contact.get("department"),
-            role=contact.get("role"),
-            password_hash=hash_password(temp_password),
-            reset_token=None,
-            token_expiry=None
+        # Debug query for existing user
+        existing_query = db.query(User).filter(
+            (User.email == contact.email) | 
+            (User.username == contact.email)
         )
+        print(f"Checking for existing user with query: {str(existing_query)}")
         
-        # Database operations
+        existing = existing_query.first()
+        if existing:
+            print(f"Found existing user:")
+            print(f"  ID: {existing.id}")
+            print(f"  Email: {existing.email}")
+            print(f"  Username: {existing.username}")
+            print(f"  Created at: {existing.created_at}")
+            
+            raise HTTPException(
+                status_code=409,
+                detail=f"User with email {contact.email} already exists"
+            )
+    
+        # Create new user
         try:
+            temp_password = generate_password()
+            hashed = bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode()
+            
+            user = User(
+                username=contact.email,
+                name=contact.name,
+                email=contact.email,
+                phone=contact.phone,
+                department=contact.department,
+                role=contact.role,
+                password_hash=hashed
+            )
+            
             db.add(user)
             db.commit()
             db.refresh(user)
-        except Exception as db_error:
+            
+            print(f"Created new user:")
+            print(f"  ID: {user.id}")
+            print(f"  Email: {user.email}")
+            
+            # Send email and log
+            await send_email_notification(
+                contact={"email": user.email, "name": user.name},
+                message=f"Your temporary password is: {temp_password}"
+            )
+            add_audit_log("Create Contact", token["sub"], f"Created contact: {user.email}")
+            
+            return {"id": user.id, "message": "Contact created successfully"}
+            
+        except Exception as e:
             db.rollback()
-            raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
-        
-        # Send email
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = SMTP_FROM
-            msg['To'] = user.email
-            msg['Subject'] = "Your temporary password"
-            msg.attach(MIMEText(f"Your temporary password is: {temp_password}", 'plain'))
+            print(f"Database error: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
             
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(msg)
-            server.quit()
-            add_audit_log("Email Sent", token["sub"], f"Sent password email to {user.email}")
-        except Exception as email_error:
-            add_audit_log("Email Error", token["sub"], f"Email error: {str(email_error)}")
-            # Don't rollback DB - user is created but email failed
-            
-        return {"id": f"contact_{user.id}"}
-        
+    except HTTPException as he:
+        print(f"HTTP Exception: {str(he.detail)}")
+        raise
     except Exception as e:
+        print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    
 
 # Add password change request model
 class PasswordChangeRequest(BaseModel):
