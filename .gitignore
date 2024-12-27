@@ -34,3 +34,5 @@ audit_logs/current_audit.log
 /audit_logs
 cert.pem
 key.pem
+incidents.db
+incidents.db

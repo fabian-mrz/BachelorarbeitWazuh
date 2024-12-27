@@ -1388,77 +1388,37 @@ def save_config(settings: Dict):
     try:
         with open('config.ini', 'w') as f:
             config.write(f)
-            add_audit_log("Config Updated by", token["sub"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving config: {str(e)}")
 
-#settings
+
 @app.get("/settings")
 async def get_settings(admin_user = Depends(is_admin)):
     """Get all settings from config.ini"""
     return read_config()
 
-# Add settings model
-class SettingsUpdate(BaseModel):
-    telegram_token: str | None = None
-    smtp_server: str | None = None
-    smtp_port: int | None = None
-    smtp_username: str | None = None
-    smtp_password: str | None = None
-    sip_server: str | None = None
-    sip_username: str | None = None
-    sip_password: str | None = None
-
 @app.post("/settings")
-async def update_settings(
-    settings: SettingsUpdate, 
-    admin_user = Depends(is_admin)
-):
+async def update_settings(settings: Dict, admin_user = Depends(is_admin)):
     """Update settings in config.ini"""
+    logging.info(f"Received settings update: {settings}")
+    
     try:
-        print(f"Attempting to update settings: {settings.model_dump()}")
+        # Validate settings
+        if not isinstance(settings, dict):
+            raise ValueError("Settings must be a dictionary")
+            
+        # Debug print
+        print(f"Attempting to save settings: {settings}")
         
-        # Extract username from admin_user token/object
-        username = admin_user.get('sub') if isinstance(admin_user, dict) else str(admin_user)
+        save_config(settings)
+        logging.info("Settings saved successfully")
+        add_audit_log("Update Settings", admin_user.username, "Updated settings")
+        return {"message": "Settings updated successfully"}
         
-        # Validate settings before saving
-        config = configparser.ConfigParser()
-        if not os.path.exists('config.ini'):
-            print("Creating new config file")
-            config['DEFAULT'] = {}
-        else:
-            config.read('config.ini')
-            print("Loaded existing config")
-
-        # Update settings
-        for key, value in settings.model_dump().items():
-            if value is not None:
-                config['DEFAULT'][key] = str(value)
-                print(f"Updated {key}")
-
-        # Save with error handling
-        try:
-            with open('config.ini', 'w') as f:
-                config.write(f)
-            print("Settings saved successfully")
-            
-            # Use extracted username for audit log
-            add_audit_log("Settings Updated", username, "Updated configuration")
-            return {"message": "Settings updated successfully"}
-            
-        except IOError as e:
-            print(f"IO Error saving config: {e}")
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to save config: {str(e)}"
-            )
-            
     except Exception as e:
-        print(f"Error updating settings: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to update settings: {str(e)}"
-        )
+        logging.error(f"Error updating settings: {str(e)}")
+        logging.exception("Full traceback:")
+        raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
     
 #Templates
 @app.get('/list_templates')
