@@ -393,21 +393,33 @@ def process_template_fields(template_data: dict, incident_data: dict) -> dict:
     return processed_fields
 
 #notification
-async def send_notifications(incident_id: str):
-    """Send notifications with attachments using template and escalation config"""
+async def send_notifications(incident_id: str, db: Session):
     try:
-        incident = incidents[incident_id]
-        incident_data = json.loads(incident.description)
+        incident = db.query(IncidentModel).filter(
+            IncidentModel.id == incident_id
+        ).first()
+        
+        if not incident:
+            raise ValueError(f"Incident {incident_id} not found")
+            
+        # Ensure proper JSON handling
+        if isinstance(incident.description, str):
+            incident_data = json.loads(incident.description)
+        elif isinstance(incident.description, dict):
+            incident_data = incident.description
+        else:
+            raise ValueError(f"Invalid description type: {type(incident.description)}")
+            
         rule_id = incident_data['rule_id']
         csv_filename = incident_data.get('csv_path')
-        csv_path = "./static" + csv_filename
+        csv_path = "./static" + csv_filename if csv_filename else None
         
         # Load configurations
         template_data = load_template(rule_id)
         escalation = await load_escalation_config(rule_id)
         contacts = load_contacts()
         
-        # Process template
+        # Process template with validated data
         processed_fields = process_template_fields(template_data, incident_data)
         message = template_data['template'].format(**processed_fields)
 
@@ -434,34 +446,47 @@ async def send_notifications(incident_id: str):
 
         # Handle phone calls
         for phase in escalation['phases']:
-            if incidents[incident_id].acknowledged:
+            # Check acknowledgment status from db
+            incident = db.query(IncidentModel).filter(
+                IncidentModel.id == incident_id
+            ).first()
+            
+            if incident.acknowledged:
                 return
                 
             if phase['type'] == 'phone' and config['SIP'].get('enabled', 'False').lower() == 'true':
                 if phase['delay'] > 0:
                     await asyncio.sleep(phase['delay'] * 60)
                 
-                if incidents[incident_id].acknowledged:
+                # Recheck acknowledgment after delay
+                incident = db.query(IncidentModel).filter(
+                    IncidentModel.id == incident_id
+                ).first()
+                
+                if incident.acknowledged:
                     return
                 
                 for contact_id in phase['contacts']:
                     try:
                         contact = contacts[contact_id]
                         print(f"📞 Calling {contact['name']} ({contact['phone']})")
-                        ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknoledge and 5 to skip. {message}")
+                        ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknowledge and 5 to skip. {message}")
                         if ack:
-                            incidents[incident_id].acknowledged = True
-                            incidents[incident_id].acknowledged_by = contact['name']
+                            incident.acknowledged = True
+                            incident.acknowledged_by = contact['name']
+                            db.commit()
                             add_audit_log("Incident Acknowledged by Phone Call", contact['name'])
-                        else:
-                            add_audit_log("Escalating furhter. Incident Not Acknowledged by Phone Call", contact['name'])
                             return
+                        else:
+                            add_audit_log("Escalating further. Incident Not Acknowledged by Phone Call", contact['name'])
+                            continue
                     except Exception as e:
                         print(f"Error making phone call: {e}")
                         continue
 
     except Exception as e:
         print(f"Error in notification process: {e}")
+        db.rollback()
 
 #email notification
 async def send_email_notification(contact: dict, message: str, csv_path: str = None):
@@ -491,16 +516,15 @@ async def send_email_notification(contact: dict, message: str, csv_path: str = N
 
 # telegram notification
 async def send_telegram_notification(message: str, csv_path: str = None):
-    """Send notification via Telegram with markdown formatting"""
+    """Send notification via Telegram without markdown formatting"""
     try:
         bot = telegram.Bot(token=config['telegram']['BOT_TOKEN'])
         chat_id = config['telegram']['CHAT_ID']
         
-        # Send message with markdown parsing
+        # Send message as plain text
         await bot.send_message(
             chat_id=chat_id,
-            text=message,
-            parse_mode='MarkdownV2'
+            text=message
         )
         
         # Send CSV if exists
@@ -677,10 +701,9 @@ async def create_incident(incident: Incident, db: Session = Depends(get_incident
         incident_data = json.loads(incident.description)
         rule_id = incident_data['rule_id']
         
-        # Check for existing unarchived incident with same rule_id
+        # Check for existing incidents with same rule_id (both active and archived)
         existing = db.query(IncidentModel).filter(
-            IncidentModel.description.like(f'%"rule_id": "{rule_id}"%'),
-            IncidentModel.archived == False
+            IncidentModel.description.like(f'%"rule_id": "{rule_id}"%')
         ).first()
         
         if existing:
@@ -688,25 +711,23 @@ async def create_incident(incident: Incident, db: Session = Depends(get_incident
             existing.update_count += 1
             existing.description = incident_data
             
-            # Keep acknowledgement status
-            if not existing.acknowledged:
-                existing.acknowledged = incident.acknowledged
-                existing.acknowledged_by = incident.acknowledged_by
-            
-            # Update escalation if needed    
-            if not existing.escalated:
-                existing.escalated = incident.escalated
+            # Keep acknowledgement status if not archived
+            if not existing.archived:
+                if not existing.acknowledged:
+                    existing.acknowledged = incident.acknowledged
+                    existing.acknowledged_by = incident.acknowledged_by
                 
+                if not existing.escalated:
+                    existing.escalated = incident.escalated
+            
             db.commit()
             
-            print(f"📝 Updated existing incident: {existing.id} (update #{existing.update_count})")
+            status = "archived" if existing.archived else "active"
+            print(f"📝 Updated {status} incident: {existing.id} (update #{existing.update_count})")
             
-            # Trigger notifications for update
-            asyncio.create_task(send_notifications(existing.id))
+            return {"message": f"Incident updated ({status})", "id": existing.id}
             
-            return {"message": "Incident updated", "id": existing.id}
-            
-        # Create new incident if no active incident exists
+        # Create new incident if no existing incident found
         db_incident = IncidentModel(
             id=incident.id,
             title=incident.title,
@@ -727,8 +748,8 @@ async def create_incident(incident: Incident, db: Session = Depends(get_incident
         db.commit()
         print(f"📝 New incident created: {incident.id}")
         
-        # Start notification handling in background
-        asyncio.create_task(send_notifications(incident.id))
+        # Pass db session to notifications
+        asyncio.create_task(send_notifications(incident.id, db))
         
         return {"message": "Incident created", "id": incident.id}
         
