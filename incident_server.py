@@ -266,26 +266,28 @@ archived_incidents = {}
 config = configparser.ConfigParser()
 config.read('config.ini')
 
-CHAT_ID = config['telegram']['CHAT_ID']
-BOT_TOKEN = config['telegram']['BOT_TOKEN']
-SIP_USERNAME = config['SIP']['username']
-SIP_PASSWORD = config['SIP']['password']
-SIP_HOST = config['SIP']['host']
+CHAT_ID = config.get('telegram', 'CHAT_ID', fallback='123456789')
+BOT_TOKEN = config.get('telegram', 'BOT_TOKEN', fallback='fake_bot_token')
+SIP_USERNAME = config.get('SIP', 'username', fallback='fake_username')
+SIP_PASSWORD = config.get('SIP', 'password', fallback='fake_password')
+SIP_HOST = config.get('SIP', 'host', fallback='sip.example.com')
 
 #email
-SMTP_SERVER = config['SMTP']['server']
-SMTP_PORT = 587  # Office365 uses port 587 for STARTTLS
-SMTP_USER = config['SMTP']['username']
-SMTP_PASS = config['SMTP']['password']
-SMTP_FROM = config['SMTP']['from']
-
+SMTP_SERVER = config.get('SMTP', 'server', fallback='smtp.example.com')
+SMTP_PORT = int(config.get('SMTP', 'port', fallback=587))  # Office365 uses port 587 for STARTTLS
+SMTP_USER = config.get('SMTP', 'username', fallback='user@example.com')
+SMTP_PASS = config.get('SMTP', 'password', fallback='fake_password')
+SMTP_FROM = config.get('SMTP', 'from', fallback='noreply@example.com')
 
 #tsl
-SERVER_HOST = "0.0.0.0"
-SERVER_PORT = 8334
+SERVER_HOST = config.get('Server', 'host', fallback='0.0.0.0')
+SERVER_PORT = int(config.get('Server', 'port', fallback=8334))
 
-SSL_KEYFILE = "key.pem"
-SSL_CERTFILE = "cert.pem"
+SSL_KEYFILE = config.get('SSL', 'keyfile', fallback='key.pem')
+SSL_CERTFILE = config.get('SSL', 'certfile', fallback='cert.pem')
+
+#data 
+retention_days = int(config.get('Retention', 'days', fallback=30))
 
 
 
@@ -1420,6 +1422,47 @@ async def update_settings(settings: Dict, admin_user = Depends(is_admin)):
         logging.exception("Full traceback:")
         raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
     
+@app.post("/settings/retention")
+async def update_retention_settings(
+    retention_days: int,
+    admin_user = Depends(is_admin),
+    db: Session = Depends(get_incidents_db)
+):
+    """Update incident retention period"""
+    try:
+        # Validate retention days
+        if retention_days < 1:
+            raise ValueError("Retention days must be at least 1")
+            
+        # Update config
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+        
+        if 'Retention' not in config:
+            config.add_section('Retention')
+        
+        config['Retention']['days'] = str(retention_days)
+        
+        with open('config.ini', 'w') as f:
+            config.write(f)
+            
+        # Trigger cleanup of old incidents
+        cutoff_date = datetime.now() - timedelta(days=retention_days)
+        db.query(IncidentModel).filter(
+            IncidentModel.created_at < cutoff_date
+        ).delete()
+        db.commit()
+        
+        logging.info(f"Updated retention period to {retention_days} days")
+        add_audit_log("Update Retention", admin_user.username, f"Set to {retention_days} days")
+        
+        return {"message": f"Retention period updated to {retention_days} days"}
+        
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Error updating retention settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 #Templates
 @app.get('/list_templates')
 async def list_templates():
@@ -1532,54 +1575,6 @@ async def generate_certificate(cert_data: dict, admin_user: User = Depends(is_ad
         logging.error(f"Certificate generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
-RESTART_LOCK_FILE = "restart.lock"
-RESTART_COOLDOWN = 60  # seconds
-
-def check_restart_cooldown():
-    try:
-        with open(RESTART_LOCK_FILE, 'a+') as f:
-            try:
-                # Try to acquire an exclusive lock
-                portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
-                
-                # Read last restart time
-                f.seek(0)
-                content = f.read().strip()
-                last_time = float(content) if content else 0
-                current_time = time.time()
-                
-                if current_time - last_time < RESTART_COOLDOWN:
-                    remaining = int(RESTART_COOLDOWN - (current_time - last_time))
-                    raise HTTPException(
-                        status_code=429,
-                        detail=f"Please wait {remaining} seconds before requesting another restart"
-                    )
-                
-                # Update timestamp
-                f.seek(0)
-                f.truncate()
-                f.write(str(current_time))
-                
-            finally:
-                portalocker.unlock(f)
-    except portalocker.LockException:
-        raise HTTPException(
-            status_code=429, 
-            detail="Restart already in progress"
-        )
-
-@app.post("/api/server/restart")
-async def restart_endpoint(admin_user: User = Depends(is_admin)):
-    try:
-        check_restart_cooldown()
-        restart_server()
-        add_audit_log("Server Restart", admin_user.username, "Server restarted")
-        return {"message": "Server restart initiated"}
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logging.error(f"Server restart error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
     
 app.add_middleware(HTTPSRedirectMiddleware)
