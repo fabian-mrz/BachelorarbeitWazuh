@@ -968,6 +968,60 @@ async def archive_incident(
         print(f"Error archiving incident: {e}")
         raise HTTPException(status_code=500, detail="Error archiving incident")
 
+@app.delete("/incidents/archived/{incident_id}")
+async def delete_archived_incident(
+    incident_id: str,
+    token = Depends(verify_token),
+    db: Session = Depends(get_incidents_db)
+):
+    try:
+        incident = db.query(IncidentModel).filter(
+            IncidentModel.id == incident_id,
+            IncidentModel.archived == True
+        ).first()
+        
+        if not incident:
+            raise HTTPException(status_code=404, detail="Archived incident not found")
+            
+        db.delete(incident)
+        db.commit()
+        
+        print(f"🗑️ Archived incident {incident_id} deleted by {token['sub']}")
+        add_audit_log("Delete Archived Incident", token["sub"], f"Incident ID: {incident_id}")
+        
+        return {"message": f"Archived incident {incident_id} deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting archived incident: {e}")
+        raise HTTPException(status_code=500, detail="Error deleting archived incident")
+
+@app.delete("/incidents/archived/")
+async def delete_all_archived_incidents(
+    token = Depends(verify_token),
+    db: Session = Depends(get_incidents_db)
+):
+    try:
+        deleted_count = db.query(IncidentModel).filter(
+            IncidentModel.archived == True
+        ).delete()
+        
+        if deleted_count == 0:
+            return {"message": "No archived incidents to delete"}
+            
+        db.commit()
+        
+        print(f"🗑️ All archived incidents deleted by {token['sub']}")
+        add_audit_log("Delete All Archived Incidents", token["sub"], f"Deleted {deleted_count} incidents")
+        
+        return {"message": f"Successfully deleted {deleted_count} archived incidents"}
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting all archived incidents: {e}")
+        raise HTTPException(status_code=500, detail="Error deleting all archived incidents")
 
 
 # escalations
