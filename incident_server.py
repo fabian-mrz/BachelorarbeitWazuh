@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from datetime import datetime
 import asyncio
-from typing import Dict, Optional, List
+from typing import List, Tuple, Union, Dict, Optional
 import json
 import configparser
 import os
@@ -22,9 +22,11 @@ import re
 from auth import verify_auth, create_access_token, verify_token, is_admin
 from database import Base, get_incidents_db, get_users_db, users_engine, incidents_engine
 from models import User, IncidentModel, ArchivedIncidentModel
+import aiofiles
 import bcrypt
 import logging
 from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, pool
 import uvicorn
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -37,6 +39,8 @@ from multiprocessing import Process
 import fcntl
 import portalocker
 import socket
+
+
 
 #openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365 -subj "/C=DE/ST=Baden-Württemberg/L=Waldburg/O=Wazuh/CN=wazuh.local/emailAddress=fabimerz@proton.me"
 
@@ -274,7 +278,7 @@ SIP_HOST = config.get('SIP', 'host', fallback='sip.example.com')
 
 #email
 SMTP_SERVER = config.get('SMTP', 'server', fallback='smtp.example.com')
-SMTP_PORT = int(config.get('SMTP', 'port', fallback=587))  # Office365 uses port 587 for STARTTLS
+SMTP_PORT = int(config.get('SMTP', 'port', fallback=587))  
 SMTP_USER = config.get('SMTP', 'username', fallback='user@example.com')
 SMTP_PASS = config.get('SMTP', 'password', fallback='fake_password')
 SMTP_FROM = config.get('SMTP', 'from', fallback='noreply@example.com')
@@ -301,26 +305,6 @@ phone_controller = LinphoneController(
 
 
 
-
-class Incident(BaseModel):
-    id: str
-    title: Optional[str] = None
-    description: str
-    severity: Optional[int] = None
-    source: Optional[str] = None
-    acknowledged: bool = False
-    acknowledged_by: Optional[str] = None
-    escalated: bool = False
-    created_at: datetime = Field(default_factory=datetime.now)
-    archived: bool = False
-    archived_at: Optional[datetime] = None
-    archived_by: Optional[str] = None
-    update_count: int = 0  # Add update counter
-
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
 
 
 class TimeRange(BaseModel):
@@ -392,6 +376,25 @@ def process_template_fields(template_data: dict, incident_data: dict) -> dict:
     
     return processed_fields
 
+
+def clean_message_for_phone(message: str) -> str:
+    """Clean message text for phone TTS"""
+    # First remove sample event section
+    import re
+    message = re.sub(r'\*Sample Event:\*[\s\S]*?```[\s\S]*?```', '', message)
+    
+    return (message
+        .replace('🚨', '')           # Remove emoji
+        .replace('*', '')            # Remove markdown
+        .replace('```', '')          # Remove code blocks
+        .replace('"', '')            # Remove quotes
+        .replace("'", '')            # Remove single quotes
+        .replace('{', '')            # Remove brackets
+        .replace('}', '')
+        .replace('_', ' ')           # Replace underscores with spaces
+        .strip()                     # Remove leading/trailing whitespace
+    )
+
 #notification
 async def send_notifications(incident_id: str, db: Session):
     try:
@@ -422,6 +425,9 @@ async def send_notifications(incident_id: str, db: Session):
         # Process template with validated data
         processed_fields = process_template_fields(template_data, incident_data)
         message = template_data['template'].format(**processed_fields)
+
+        # Do the same for phone message, which should replace newlines with dots and remove special characters
+        phone_message = clean_message_for_phone(message)
 
         # Immediate notifications (email and telegram)
         for contact_id in escalation['phases'][0]['contacts']:
@@ -470,7 +476,8 @@ async def send_notifications(incident_id: str, db: Session):
                     try:
                         contact = contacts[contact_id]
                         print(f"📞 Calling {contact['name']} ({contact['phone']})")
-                        ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknowledge and 5 to skip. {message}")
+                        # Remove special characters and create newline for new info per line
+                        ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknowledge or 5 to skip. {phone_message}")
                         if ack:
                             incident.acknowledged = True
                             incident.acknowledged_by = contact['name']
@@ -516,25 +523,30 @@ async def send_email_notification(contact: dict, message: str, csv_path: str = N
 
 # telegram notification
 async def send_telegram_notification(message: str, csv_path: str = None):
-    """Send notification via Telegram without markdown formatting"""
+    """Send notification via Telegram"""
     try:
         bot = telegram.Bot(token=config['telegram']['BOT_TOKEN'])
         chat_id = config['telegram']['CHAT_ID']
         
-        # Send message as plain text
+        # Send message
         await bot.send_message(
             chat_id=chat_id,
-            text=message
+            text=message,
+            parse_mode='Markdown'
         )
         
         # Send CSV if exists
         if csv_path and os.path.exists(csv_path):
-            async with aiofiles.open(csv_path, 'rb') as doc:
-                await bot.send_document(chat_id=chat_id, document=doc)
+            with open(csv_path, 'rb') as doc:
+                await bot.send_document(
+                    chat_id=chat_id,
+                    document=doc
+                )
                 
     except Exception as e:
         print(f"Telegram notification error: {e}")
         raise
+
 
 
 ##update incidents
@@ -695,44 +707,65 @@ async def make_phone_call(contact: dict, message: str) -> bool:
 ### routes
 
 #incidents
+
+class Incident(BaseModel):
+    id: str
+    title: str
+    description: Union[str, Dict]
+    severity: str = "medium"
+    source: str = "wazuh"
+    acknowledged: bool = False
+    acknowledged_by: Optional[str] = None
+    escalated: bool = False
+    created_at: datetime = Field(default_factory=datetime.now)
+    archived: bool = False
+    archived_at: Optional[datetime] = None
+    archived_by: Optional[str] = None
+    update_count: int = 0
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+
 @app.post("/incidents/")
 async def create_incident(incident: Incident, db: Session = Depends(get_incidents_db)):
     try:
-        incident_data = json.loads(incident.description)
+        # Parse description
+        if isinstance(incident.description, str):
+            incident_data = json.loads(incident.description)
+        else:
+            incident_data = incident.description
+            
         rule_id = incident_data['rule_id']
         
-        # Check for existing incidents with same rule_id (both active and archived)
+        # Check only for active (non-archived) incidents
         existing = db.query(IncidentModel).filter(
-            IncidentModel.description.like(f'%"rule_id": "{rule_id}"%')
+            IncidentModel.description.like(f'%"rule_id": "{rule_id}"%'),
+            IncidentModel.archived == False
         ).first()
         
-        if existing:
-            # Update existing incident
+        if existing and not existing.archived:
             existing.update_count += 1
             existing.description = incident_data
             
-            # Keep acknowledgement status if not archived
-            if not existing.archived:
-                if not existing.acknowledged:
-                    existing.acknowledged = incident.acknowledged
-                    existing.acknowledged_by = incident.acknowledged_by
-                
-                if not existing.escalated:
-                    existing.escalated = incident.escalated
+            if not existing.acknowledged:
+                existing.acknowledged = incident.acknowledged
+                existing.acknowledged_by = incident.acknowledged_by
+            if not existing.escalated:
+                existing.escalated = incident.escalated
             
             db.commit()
+            return {"message": "Incident updated", "id": existing.id}
             
-            status = "archived" if existing.archived else "active"
-            print(f"📝 Updated {status} incident: {existing.id} (update #{existing.update_count})")
-            
-            return {"message": f"Incident updated ({status})", "id": existing.id}
-            
-        # Create new incident if no existing incident found
+        # Create new incident
         db_incident = IncidentModel(
             id=incident.id,
             title=incident.title,
             description=incident_data,
-            severity=incident.severity, 
+            severity=incident.severity,
             source=incident.source,
             acknowledged=incident.acknowledged,
             acknowledged_by=incident.acknowledged_by,
@@ -746,20 +779,19 @@ async def create_incident(incident: Incident, db: Session = Depends(get_incident
         
         db.add(db_incident)
         db.commit()
-        print(f"📝 New incident created: {incident.id}")
         
-        # Pass db session to notifications
         asyncio.create_task(send_notifications(incident.id, db))
-        
         return {"message": "Incident created", "id": incident.id}
         
-    except json.JSONDecodeError as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail="Invalid JSON in description")
     except Exception as e:
         db.rollback()
-        print(f"Error creating/updating incident: {e}")
+        print(f"Error creating incident: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+def get_username_from_email(email: str) -> str:
+    """Extract username from email address"""
+    return email.split('@')[0] if '@' in email else email
 
 @app.post("/incidents/{incident_id}/acknowledge")
 async def acknowledge_incident(
@@ -783,7 +815,7 @@ async def acknowledge_incident(
             
         # Update incident
         incident.acknowledged = True
-        incident.acknowledged_by = token["sub"]
+        incident.acknowledged_by = get_username_from_email(token["sub"])
         
         db.commit()
         
@@ -896,13 +928,26 @@ async def get_audit_logs(token = Depends(verify_token)):
 
 @app.get("/api/audit-logs/download")
 async def download_audit_logs(token = Depends(verify_token)):
-    add_audit_log("Download Audit Logs", token["sub"])
-    if not os.path.exists(CURRENT_LOG_FILE):
-        raise HTTPException(status_code=404, detail="No audit logs found")
-    return FileResponse(
-        CURRENT_LOG_FILE,
-        filename=f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    )
+    try:
+        file_path = Path(CURRENT_LOG_FILE)
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="No audit logs found")
+            
+        filename = f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        username = token["sub"].split('@')[0] if '@' in token["sub"] else token["sub"]
+        
+        add_audit_log("Download Audit Logs", username, f"Downloaded {filename}")
+        
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type='text/plain'
+        )
+        
+    except Exception as e:
+        logging.error(f"Audit log download error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error downloading audit logs")
 
 @app.post("/api/audit-logs/clear")
 async def clear_audit_logs(token = Depends(verify_token)):

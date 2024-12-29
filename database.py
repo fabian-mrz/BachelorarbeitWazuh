@@ -14,7 +14,10 @@ users_engine = create_engine(
 
 incidents_engine = create_engine(
     INCIDENTS_DATABASE_URL,
-    connect_args={"check_same_thread": False}
+    pool_size=20,
+    max_overflow=20,
+    pool_timeout=60,
+    pool_pre_ping=True
 )
 
 # Create sessions
