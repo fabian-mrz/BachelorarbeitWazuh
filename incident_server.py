@@ -1,9 +1,9 @@
 # incident_server.py
-from fastapi import FastAPI, HTTPException, Depends, Security, status
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 from typing import List, Tuple, Union, Dict, Optional
 import json
@@ -21,237 +21,25 @@ import threading
 import re
 from auth import verify_auth, create_access_token, verify_token, is_admin
 from database import Base, get_incidents_db, get_users_db, users_engine, incidents_engine
-from models import User, IncidentModel, ArchivedIncidentModel
-import aiofiles
+from models import User, IncidentModel
 import bcrypt
 import logging
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, pool
-import uvicorn
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import secrets
-import ssl
 import uvicorn
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 import shutil
-from multiprocessing import Process
-import fcntl
-import portalocker
-import socket
+from utils import add_audit_log, init_db, hash_password, load_escalation_config, load_template, process_template_fields, clean_message_for_phone, load_contacts, save_config, read_config, load_suppressions, save_suppressions 
+from LinphoneController import LinphoneController
 
 
-
-#openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365 -subj "/C=DE/ST=Baden-Württemberg/L=Waldburg/O=Wazuh/CN=wazuh.local/emailAddress=fabimerz@proton.me"
-
-# Add to global variables
-LOGS_DIR = "audit_logs"
-CURRENT_LOG_FILE = os.path.join(LOGS_DIR, "current_audit.log")
-
-# Create logs directory if it doesn't exist
-os.makedirs(LOGS_DIR, exist_ok=True)
-
-def add_audit_log(action: str, user: str = None, details: str = None):
-    log_entry = {
-        "timestamp": datetime.now().isoformat(),
-        "user": user,
-        "action": action,
-        "details": details
-    }
-    
-    with open(CURRENT_LOG_FILE, 'a') as f:
-        f.write(json.dumps(log_entry) + '\n')
-
-
-def init_db():
-    Base.metadata.create_all(users_engine)
-    Base.metadata.create_all(incidents_engine)
-    
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 app = FastAPI()
 
-#Phone controller
-class LinphoneController:
-    def reset(self):
-        """Reset controller state between calls"""
-        self.dtmf_digits = []
-        self.call_active = False
-        self.call_result = None
-        self.stop_audio = False
-        self.call_error = None
-        if self.process:
-            try:
-                self.process.terminate()
-                self.process = None
-            except:
-                pass
 
-    def text_to_speech(self, text: str, filename: str = "output.wav") -> None:
-            """Convert text to speech and save as wav file"""
-            try:
-                subprocess.run(['espeak', text, '--stdout', '-s', '120'], stdout=open(filename, 'wb'))
-            except Exception as e:
-                print(f"Error generating speech: {e}")
-
-    def __init__(self, sip_server: str, username: str, password: str):
-        self.sip_server = sip_server
-        self.username = username
-        self.password = password
-        self.process: Optional[subprocess.Popen] = None
-        self.dtmf_digits: List[str] = []
-        self.call_active = False
-        self.call_result = None
-        self.stop_audio = False  # New flag for audio control
-        self.call_error = None  # Track error state
-
-    def _handle_dtmf(self, digit: str) -> Optional[bool]:
-        """Handle DTMF input and return True/False/None based on digit"""
-        if digit == '4':
-            print("Acknowledged")
-            self.stop_audio = True  # Stop audio loop
-            time.sleep(0.5)  # Small delay to ensure audio stops
-            self._write_command("play ack.wav")
-            time.sleep(4)
-            self.call_active = False
-            return True
-        elif digit == '5':
-            print("Skipped")
-            self.stop_audio = True  # Stop audio loop
-            time.sleep(0.5)  # Small delay to ensure audio stops
-            self._write_command("play skip.wav")
-            time.sleep(4)
-            self.call_active = False
-            return False
-        return None
-        
-    def _write_command(self, command: str) -> None:
-        """Write command to linphonec"""
-        print(f"Writing command: {command}")
-        self.process.stdin.write(f"{command}\n".encode())
-        self.process.stdin.flush()
-
-    def _play_audio_loop(self) -> None:
-        print("audio loop")
-        """Play audio file in loop while call is active"""
-        wav_file = "output.wav"
-        duration = self._get_wav_duration(wav_file)
-        
-        while self.call_active and not self.stop_audio:
-            print("Playing audio")
-            self._write_command(f"play {wav_file}")
-            time.sleep(duration + 0.5)
-
-    def _get_wav_duration(self, filename: str) -> float:
-        """Get duration of wav file in seconds using ffprobe"""
-        try:
-            cmd = [
-                'ffprobe', 
-                '-v', 'quiet',
-                '-show_entries', 'format=duration',
-                '-of', 'json',
-                filename
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            import json
-            duration = float(json.loads(result.stdout)['format']['duration'])
-            print(f"Duration of {filename}: {duration:.2f} seconds")
-            return duration
-        except Exception as e:
-            print(f"Error getting audio duration: {e}")
-            return 3.0  # Reasonable fallback for espeak output
-        
-
-    def _read_output(self) -> None:
-        """Read and process linphonec output"""
-        while self.call_active:
-            line = self.process.stdout.readline().decode().strip()
-            print(f"Linphone output: {line}")
-            if "Call" in line and "connected" in line:
-                audio_thread = threading.Thread(target=self._play_audio_loop)
-                audio_thread.daemon = True
-                audio_thread.start()
-            elif "Receiving tone" in line:
-                digit = re.search(r"tone (\d)", line)
-                if digit:
-                    digit_value = digit.group(1)
-                    self.dtmf_digits.append(digit_value)
-                    result = self._handle_dtmf(digit_value)
-                    if result is not None:
-                        self.call_result = result
-            elif "Call" in line and "error" in line:
-                self.call_error = "error"
-                self.call_active = False
-                self.call_result = False
-            elif "Call" in line and "declined" in line:
-                self.call_error = "declined"
-                self.call_active = False
-                self.call_result = False
-            elif "Call" in line and "ended" in line:
-                self.call_active = False
-                
-    def make_call(self, number: str, message: str, timeout: int = 60) -> List[str]:
-        """Make a call and collect DTMF tones"""
-        try:
-            print("Making call")
-            self.reset()
-
-            # Generate speech file first
-            self.text_to_speech(message)
-            
-            # Start linphonec process
-            print("Starting linphonec process")
-            self.process = subprocess.Popen(
-                ["linphonec"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            time.sleep(3)  # Wait for setup
-            
-            # Register SIP account
-            print("Registering SIP account")
-            self._write_command(f"register sip:{self.username}@{self.sip_server} {self.password}")
-            time.sleep(1)  # Wait for registration
-            
-            # Configure audio
-            print("Configuring audio")
-            self._write_command("soundcard use files")
-            time.sleep(1)
-            
-            # Start call
-            print(f"Making call to {number}")
-            self._write_command(f"call {number}")
-            self.call_active = True
-            
-            # Start output reading thread
-            print("Starting output thread")
-            output_thread = threading.Thread(target=self._read_output)
-            output_thread.start()
-            
-            # Wait for timeout or call end
-            print(f"Waiting for call to complete (timeout: {timeout} seconds)")
-            timeout_time = time.time() + timeout
-            while self.call_active and time.time() < timeout_time:
-                time.sleep(0.1)
-                
-            # Cleanup
-            print("Call completed - cleaning up")
-            self.call_active = False
-            self._write_command("terminate")
-            self._write_command("quit")
-            output_thread.join()
-            self.process.terminate()
-            
-            return self.dtmf_digits, self.call_result, self.call_error
-            
-        except Exception as e:
-            print(f"Error: {e}")
-            if self.process:
-                self.process.terminate()
-            return [], None, "error"
 
 # constants
 BASE_DIR = './'
@@ -261,7 +49,7 @@ TEMPLATES_DIR = './templates'
 DEFAULT_TEMPLATE_PATH = os.path.join(TEMPLATES_DIR, 'default.json')
 # Set output directory
 OUTPUT_DIR = Path('/var/ossec/integrations')
-SUPPRESSIONS_FILE = Path("suppressions.json")
+
 
 archived_incidents = {}
 
@@ -294,9 +82,7 @@ SSL_CERTFILE = config.get('SSL', 'certfile', fallback='cert.pem')
 retention_days = int(config.get('Retention', 'days', fallback=30))
 
 
-
 #phone controller
-# Global LinphoneController instance
 phone_controller = LinphoneController(
     sip_server=SIP_HOST,
     username=SIP_USERNAME, 
@@ -304,6 +90,25 @@ phone_controller = LinphoneController(
 )
 
 
+class Incident(BaseModel):
+    id: str
+    title: str
+    description: Union[str, Dict]
+    severity: str = "medium"
+    source: str = "wazuh"
+    acknowledged: bool = False
+    acknowledged_by: Optional[str] = None
+    escalated: bool = False
+    created_at: datetime = Field(default_factory=datetime.now)
+    archived: bool = False
+    archived_at: Optional[datetime] = None
+    archived_by: Optional[str] = None
+    update_count: int = 0
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 
 
@@ -324,76 +129,6 @@ class SuppressionRule(BaseModel):
     criteria: List[SuppressionCriterion]
     timeRange: TimeRange
 
-
-# Remove, esalation is already handling this
-async def handle_incident_timer(incident_id: str):
-    await asyncio.sleep(60)
-    if not incidents[incident_id].acknowledged:
-        incidents[incident_id].escalated = True
-        add_audit_log(f"⚠️ Incident {incident_id} not acknowledged within 60 seconds - escalating!")
-
-async def load_escalation_config(rule_id: str = None):
-    """Load escalation config for specific rule or default"""
-    with open('escalations.json') as f:
-        escalations = json.load(f)
-    
-    if rule_id and rule_id in escalations['rules']:
-        return escalations['rules'][rule_id]
-    return escalations['default']
-
-
-def load_template(rule_id):
-    """Load template for specific rule_id or fall back to default"""
-    template_path = os.path.join(TEMPLATES_DIR, f'{rule_id}.json')
-    try:
-        if os.path.exists(template_path):
-            with open(template_path, 'r') as f:
-                return json.load(f)
-        with open(DEFAULT_TEMPLATE_PATH, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading template: {e}")
-        return None    
-
-
-#proccess template fields
-def process_template_fields(template_data: dict, incident_data: dict) -> dict:
-    """Process template fields using incident data"""
-    processed_fields = {}
-    alert_json = incident_data['sample_event']  # Get sample event from incident
-    
-    for field_name, field_expr in template_data['fields'].items():
-        try:
-            eval_globals = {
-                'alert_json': alert_json,
-                'json': json,
-                'len': len
-            }
-            processed_fields[field_name] = eval(field_expr, eval_globals, {})
-        except Exception as e:
-            print(f"Error processing field {field_name}: {e}")
-            processed_fields[field_name] = 'N/A'
-    
-    return processed_fields
-
-
-def clean_message_for_phone(message: str) -> str:
-    """Clean message text for phone TTS"""
-    # First remove sample event section
-    import re
-    message = re.sub(r'\*Sample Event:\*[\s\S]*?```[\s\S]*?```', '', message)
-    
-    return (message
-        .replace('🚨', '')           # Remove emoji
-        .replace('*', '')            # Remove markdown
-        .replace('```', '')          # Remove code blocks
-        .replace('"', '')            # Remove quotes
-        .replace("'", '')            # Remove single quotes
-        .replace('{', '')            # Remove brackets
-        .replace('}', '')
-        .replace('_', ' ')           # Replace underscores with spaces
-        .strip()                     # Remove leading/trailing whitespace
-    )
 
 #notification
 async def send_notifications(incident_id: str, db: Session):
@@ -549,75 +284,7 @@ async def send_telegram_notification(message: str, csv_path: str = None):
 
 
 
-##update incidents
-# Base CRUD Operations
-async def create_db_incident(incident_data: dict, db: Session):
-    db_incident = IncidentModel(**incident_data)
-    db.add(db_incident)
-    db.commit()
-    db.refresh(db_incident)
-    return db_incident
 
-async def get_db_incident(incident_id: str, db: Session):
-    return db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
-
-async def update_db_incident(incident_id: str, update_data: dict, db: Session):
-    incident = await get_db_incident(incident_id, db)
-    if incident:
-        for key, value in update_data.items():
-            setattr(incident, key, value)
-        db.commit()
-        db.refresh(incident)
-    return incident
-
-# Search Functions
-async def find_active_incident(rule_id: str, db: Session):
-    return db.query(IncidentModel).filter(
-        IncidentModel.description.like(f'%"rule_id": "{rule_id}"%'),
-        IncidentModel.archived == False
-    ).first()
-
-async def find_incidents_by_severity(severity: int, db: Session):
-    return db.query(IncidentModel).filter(
-        IncidentModel.severity == severity,
-        IncidentModel.archived == False
-    ).all()
-
-# Archive Functions
-async def archive_db_incident(incident_id: str, user: str, db: Session):
-    incident = await get_db_incident(incident_id, db)
-    if incident:
-        incident.archived = True
-        incident.archived_at = datetime.now()
-        incident.archived_by = user
-        db.commit()
-        return incident
-    return None
-
-async def get_archived_incidents(db: Session):
-    return db.query(IncidentModel).filter(IncidentModel.archived == True).all()
-
-# Status Management
-async def acknowledge_db_incident(incident_id: str, user: str, db: Session):
-    incident = await get_db_incident(incident_id, db)
-    if incident:
-        incident.acknowledged = True
-        incident.acknowledged_by = user
-        db.commit()
-        return incident
-    return None
-
-async def escalate_db_incident(incident_id: str, db: Session):
-    incident = await get_db_incident(incident_id, db)
-    if incident:
-        incident.escalated = True
-        db.commit()
-        return incident
-    return None
-
-
-
-################# wrong code
 async def update_incident(incident_id: str, new_data: dict) -> None:
     try:
         incident = incidents[incident_id]
@@ -705,29 +372,6 @@ async def make_phone_call(contact: dict, message: str) -> bool:
 
 
 ### routes
-
-#incidents
-
-class Incident(BaseModel):
-    id: str
-    title: str
-    description: Union[str, Dict]
-    severity: str = "medium"
-    source: str = "wazuh"
-    acknowledged: bool = False
-    acknowledged_by: Optional[str] = None
-    escalated: bool = False
-    created_at: datetime = Field(default_factory=datetime.now)
-    archived: bool = False
-    archived_at: Optional[datetime] = None
-    archived_by: Optional[str] = None
-    update_count: int = 0
-
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
-
 
 
 @app.post("/incidents/")
@@ -1342,33 +986,6 @@ async def get_users(admin_user: User = Depends(is_admin)):
     
 # suppression
 # Add helper functions
-def load_suppressions() -> dict:
-    """Load suppressions from file"""
-    if not SUPPRESSIONS_FILE.exists():
-        return {}
-    with open(SUPPRESSIONS_FILE) as f:
-        return json.load(f)
-    
-
-#load contacts from users.db
-def load_contacts() -> dict:
-    """Load contacts from users.db"""
-    db = next(get_users_db())
-    users = db.query(User).all()
-    return {
-        f"contact_{user.id}": {
-            "name": user.name,
-            "email": user.email,
-            "phone": user.phone,
-            "department": user.department,
-            "role": user.role
-        } for user in users
-    }
-
-def save_suppressions(suppressions: dict):
-    """Save suppressions to file"""
-    with open(SUPPRESSIONS_FILE, 'w') as f:
-        json.dump(suppressions, f, indent=2)
 
 @app.get("/api/suppressions")
 async def get_suppressions(token = Depends(verify_token)):
@@ -1451,7 +1068,7 @@ async def update_suppression(rule_id: str, rule: SuppressionRule, token = Depend
         return {"message": "Suppression rule updated"}
     raise HTTPException(status_code=404, detail="Rule not found")
 
-# Login endpoint with database dependency
+# Login endpoint
 @app.post("/api/login")
 async def login(credentials: dict, db: Session = Depends(get_users_db)):
     username = credentials.get("username")
@@ -1468,50 +1085,6 @@ async def login(credentials: dict, db: Session = Depends(get_users_db)):
     )
 
 ### settings.html
-# Config handling functions
-def read_config() -> Dict:
-    try:
-        config.read('config.ini')
-        return {
-            "telegram": {
-                "CHAT_ID": str(config['telegram']['CHAT_ID']),
-                "BOT_TOKEN": config['telegram']['BOT_TOKEN'],
-                "enabled": config['telegram']['enabled']
-            },
-            "smtp": dict(config['SMTP']),
-            "sip": dict(config['SIP'])
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading config: {str(e)}")
-
-def save_config(settings: Dict):
-    config['telegram'] = {
-        'CHAT_ID': settings['telegram']['CHAT_ID'],
-        'BOT_TOKEN': settings['telegram']['BOT_TOKEN'],
-        'enabled': settings['telegram']['enabled']
-    }
-    
-    config['SMTP'] = {
-        'server': settings['smtp']['server'],
-        'port': str(settings['smtp']['port']),
-        'username': settings['smtp']['username'],
-        'password': settings['smtp']['password'],
-        'from': settings['smtp']['from'],
-        'enabled': settings['smtp']['enabled']
-    }
-    
-    config['SIP'] = {
-        'username': settings['sip']['username'],
-        'password': settings['sip']['password'],
-        'host': settings['sip']['host'],
-        'enabled': settings['sip']['enabled']
-    }
-    
-    try:
-        with open('config.ini', 'w') as f:
-            config.write(f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving config: {str(e)}")
 
 
 @app.get("/settings")
@@ -1542,47 +1115,10 @@ async def update_settings(settings: Dict, admin_user = Depends(is_admin)):
         logging.exception("Full traceback:")
         raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
     
-@app.post("/settings/retention")
-async def update_retention_settings(
-    retention_days: int,
-    admin_user = Depends(is_admin),
-    db: Session = Depends(get_incidents_db)
-):
-    """Update incident retention period"""
-    try:
-        # Validate retention days
-        if retention_days < 1:
-            raise ValueError("Retention days must be at least 1")
-            
-        # Update config
-        config = configparser.ConfigParser()
-        config.read('config.ini')
-        
-        if 'Retention' not in config:
-            config.add_section('Retention')
-        
-        config['Retention']['days'] = str(retention_days)
-        
-        with open('config.ini', 'w') as f:
-            config.write(f)
-            
-        # Trigger cleanup of old incidents
-        cutoff_date = datetime.now() - timedelta(days=retention_days)
-        db.query(IncidentModel).filter(
-            IncidentModel.created_at < cutoff_date
-        ).delete()
-        db.commit()
-        
-        logging.info(f"Updated retention period to {retention_days} days")
-        add_audit_log("Update Retention", admin_user.username, f"Set to {retention_days} days")
-        
-        return {"message": f"Retention period updated to {retention_days} days"}
-        
-    except Exception as e:
-        db.rollback()
-        logging.error(f"Error updating retention settings: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
+@app.get("/isadmin")
+async def check_admin(admin_user = Depends(is_admin)):
+    return {"is_admin": True}    
+
 #Templates
 @app.get('/list_templates')
 async def list_templates():
@@ -1608,27 +1144,32 @@ async def get_template(template_name: str):
         raise HTTPException(status_code=404, detail="Template not found")
 
 @app.post("/templates/{template_name}")
-async def save_template(template_name: str, template: dict):
-    add_audit_log("Save Template", token["sub"], f"Saved template: {template_name}")
+async def save_template(
+    template_name: str, 
+    template: dict, 
+    admin_user: User = Depends(is_admin)
+):
+    add_audit_log("Save Template", admin_user.username, f"Saved template: {template_name}")
     with open(f"{TEMPLATES_DIR}/{template_name}", 'w') as f:
         json.dump(template, f, indent=2)
     return {"message": "Template saved"}
 
 @app.delete("/templates/{template_name}")
-async def delete_template(template_name: str):
+async def delete_template(
+    template_name: str, 
+    admin_user: User = Depends(is_admin)
+):
     try:
         os.remove(f"{TEMPLATES_DIR}/{template_name}")
-        add_audit_log("Delete Template", token["sub"], f"Deleted template: {template_name}")
+        add_audit_log("Delete Template", admin_user.username, f"Deleted template: {template_name}")
         return {"message": "Template deleted"}
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Template not found")
     
-@app.get("/isadmin")
-async def check_admin(admin_user = Depends(is_admin)):
-    return {"is_admin": True}
 
-# certificates
 
+#certificates
+#download
 @app.get("/api/certificate/download/{file_type}")
 async def download_certificate(file_type: str, admin_user: User = Depends(is_admin)):
     try:
@@ -1653,7 +1194,7 @@ async def download_certificate(file_type: str, admin_user: User = Depends(is_adm
         logging.error(f"Certificate download error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error downloading certificate")
 
-#cert
+#generate
 @app.post("/api/certificate/generate")
 async def generate_certificate(cert_data: dict, admin_user: User = Depends(is_admin)):
     try:
