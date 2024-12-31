@@ -31,7 +31,7 @@ import secrets
 import uvicorn
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 import shutil
-from utils import add_audit_log, init_db, hash_password, load_escalation_config, load_template, process_template_fields, clean_message_for_phone, load_contacts, save_config, read_config, load_suppressions, save_suppressions 
+from utils import add_audit_log, init_db, hash_password, load_escalation_config, load_template, process_template_fields, clean_message_for_phone, load_contacts, save_config, read_config, load_suppressions, save_suppressions, verify_api_key 
 from LinphoneController import LinphoneController
 
 
@@ -374,8 +374,13 @@ async def make_phone_call(contact: dict, message: str) -> bool:
 ### routes
 
 
+
 @app.post("/incidents/")
-async def create_incident(incident: Incident, db: Session = Depends(get_incidents_db)):
+async def create_incident(
+    incident: Incident,
+    db: Session = Depends(get_incidents_db),
+    api_key: str = Depends(verify_api_key)  # Add this line
+):
     try:
         # Parse description
         if isinstance(incident.description, str):

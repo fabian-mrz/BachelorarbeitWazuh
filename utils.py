@@ -1,8 +1,11 @@
 from datetime import datetime
 import json
 import bcrypt
-from database import Base, users_engine, incidents_engine
+from database import Base, users_engine, incidents_engine, get_incidents_db, get_users_db
 import os
+from models import User
+from fastapi.security import APIKeyHeader
+from fastapi import Security, HTTPException, status
 import configparser
 from pathlib import Path
 
@@ -23,6 +26,22 @@ os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 
 os.makedirs(LOGS_DIR, exist_ok=True)
+
+# Add after other constants
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
+API_TOKENS = [
+    "token1234",  # Replace later in config ini
+    "token5678"
+]
+
+# Add before the endpoint
+async def verify_api_key(api_key: str = Security(API_KEY_HEADER)):
+    if api_key not in API_TOKENS:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key"
+        )
+    return api_key
 
 def add_audit_log(action: str, user: str = None, details: str = None):
     log_entry = {

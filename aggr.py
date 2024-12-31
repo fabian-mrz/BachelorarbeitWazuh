@@ -103,7 +103,10 @@ class EventProcessor:
             response = requests.post(
                 INCIDENT_SERVER_URL,
                 json=incident,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "X-API-Key": "token1234"
+                },
                 verify=False  # Disable SSL verification
             )
             response.raise_for_status()
