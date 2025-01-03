@@ -8,8 +8,7 @@ from fastapi.security import APIKeyHeader
 from fastapi import Security, HTTPException, status
 import configparser
 from pathlib import Path
-
-
+from logger import logger
 
 # Constants
 LOGS_DIR = "audit_logs"
@@ -24,16 +23,12 @@ config = configparser.ConfigParser()
 os.makedirs(LOGS_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
-
-os.makedirs(LOGS_DIR, exist_ok=True)
-
 # Add after other constants
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
 API_TOKENS = [
     "token1234",  # Replace later in config ini
     "token5678"
 ]
-
 # Add before the endpoint
 async def verify_api_key(api_key: str = Security(API_KEY_HEADER)):
     if api_key not in API_TOKENS:
@@ -51,26 +46,38 @@ def add_audit_log(action: str, user: str = None, details: str = None):
         "details": details
     }
     
-    with open(CURRENT_LOG_FILE, 'a') as f:
-        f.write(json.dumps(log_entry) + '\n')
+    try:
+        with open(CURRENT_LOG_FILE, 'a') as f:
+            f.write(json.dumps(log_entry) + '\n')
+    except Exception as e:
+        print(f"Error writing audit log: {e}")
 
 def init_db():
-    Base.metadata.create_all(users_engine)
-    Base.metadata.create_all(incidents_engine)
-    
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    try:
+        Base.metadata.create_all(users_engine)
+        Base.metadata.create_all(incidents_engine)
+    except Exception as e:
+        print(f"Error initializing database: {e}")
 
+def hash_password(password: str) -> str:
+    try:
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    except Exception as e:
+        print(f"Error hashing password: {e}")
+        return None
 
 async def load_escalation_config(rule_id: str = None):
     """Load escalation config for specific rule or default"""
-    with open('escalations.json') as f:
-        escalations = json.load(f)
-    
-    if rule_id and rule_id in escalations['rules']:
-        return escalations['rules'][rule_id]
-    return escalations['default']
-
+    try:
+        with open('escalations.json') as f:
+            escalations = json.load(f)
+        
+        if rule_id and rule_id in escalations['rules']:
+            return escalations['rules'][rule_id]
+        return escalations['default']
+    except Exception as e:
+        print(f"Error loading escalation config: {e}")
+        return None
 
 def load_template(rule_id):
     """Load template for specific rule_id or fall back to default"""
@@ -85,8 +92,6 @@ def load_template(rule_id):
         print(f"Error loading template: {e}")
         return None    
 
-
-#proccess template fields
 def process_template_fields(template_data: dict, incident_data: dict) -> dict:
     """Process template fields using incident data"""
     processed_fields = {}
@@ -106,24 +111,26 @@ def process_template_fields(template_data: dict, incident_data: dict) -> dict:
     
     return processed_fields
 
-
 def clean_message_for_phone(message: str) -> str:
     """Clean message text for phone TTS"""
-    # First remove sample event section
     import re
-    message = re.sub(r'\*Sample Event:\*[\s\S]*?```[\s\S]*?```', '', message)
-    
-    return (message
-        .replace('🚨', '')           # Remove emoji
-        .replace('*', '')            # Remove markdown
-        .replace('```', '')          # Remove code blocks
-        .replace('"', '')            # Remove quotes
-        .replace("'", '')            # Remove single quotes
-        .replace('{', '')            # Remove brackets
-        .replace('}', '')
-        .replace('_', ' ')           # Replace underscores with spaces
-        .strip()                     # Remove leading/trailing whitespace
-    )
+    try:
+        message = re.sub(r'\*Sample Event:\*[\s\S]*?```[\s\S]*?```', '', message)
+        
+        return (message
+            .replace('🚨', '')           # Remove emoji
+            .replace('*', '')            # Remove markdown
+            .replace('```', '')          # Remove code blocks
+            .replace('"', '')            # Remove quotes
+            .replace("'", '')            # Remove single quotes
+            .replace('{', '')            # Remove brackets
+            .replace('}', '')
+            .replace('_', ' ')           # Replace underscores with spaces
+            .strip()                     # Remove leading/trailing whitespace
+        )
+    except Exception as e:
+        print(f"Error cleaning message: {e}")
+        return message
 
 def read_config() -> dict:
     try:
@@ -171,30 +178,44 @@ def save_config(settings: dict):
     
 def load_suppressions() -> dict:
     """Load suppressions from file"""
-    if not SUPPRESSIONS_FILE.exists():
+    try:
+        if not SUPPRESSIONS_FILE.exists():
+            return {}
+        with open(SUPPRESSIONS_FILE) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading suppressions: {e}")
         return {}
-    with open(SUPPRESSIONS_FILE) as f:
-        return json.load(f)
-    
 
-#load contacts from users.db
 def load_contacts() -> dict:
     """Load contacts from users.db"""
-    db = next(get_users_db())
-    users = db.query(User).all()
-    return {
-        f"contact_{user.id}": {
-            "name": user.name,
-            "email": user.email,
-            "phone": user.phone,
-            "department": user.department,
-            "role": user.role
-        } for user in users
-    }
+    try:
+        db = next(get_users_db())
+        users = db.query(User).all()
+        return {
+            f"contact_{user.id}": {
+                "name": user.name,
+                "email": user.email,
+                "phone": user.phone,
+                "department": user.department,
+                "role": user.role
+            } for user in users
+        }
+    except Exception as e:
+        print(f"Error loading contacts: {e}")
+        return {}
 
 def save_suppressions(suppressions: dict):
     """Save suppressions to file"""
-    with open(SUPPRESSIONS_FILE, 'w') as f:
-        json.dump(suppressions, f, indent=2)
- 
- 
+    try:
+        with open(SUPPRESSIONS_FILE, 'w') as f:
+            json.dump(suppressions, f, indent=2)
+    except Exception as e:
+        print(f"Error saving suppressions: {e}")
+
+def generate_password():
+    try:
+        return secrets.token_urlsafe(12)
+    except Exception as e:
+        print(f"Error generating password: {e}")
+        return None

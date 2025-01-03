@@ -12,14 +12,9 @@ from functools import wraps
 import time
 from database import get_users_db
 from models import User
+from logger import logger
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Optional: Add file handler to also log to a file
 file_handler = logging.FileHandler('auth.log')
@@ -39,7 +34,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
 security = HTTPBearer()
-logger = logging.getLogger(__name__)
+
 
 
 def verify_password(plain_password, hashed_password):
@@ -58,18 +53,11 @@ def create_access_token(data: dict):
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     try:
-
-        
         token = credentials.credentials
-        
-        # Log key verification details
-        
         start_time = time.time()
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         decode_time = time.time() - start_time
-
         return payload
-        
     except ExpiredSignatureError as e:
         logger.error(f"Token expired: {str(e)}")
         logger.error(f"Token expiry details: {e.__dict__}")
@@ -87,42 +75,59 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-def is_admin(token = Depends(verify_token)):
-    db = next(get_users_db())
-    user = db.query(User).filter(User.username == token.get("sub")).first()
-    if not user or user.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="Admin privileges required"
-        )
-    return user
 
+def is_admin(token = Depends(verify_token)):
+    try:
+        db = next(get_users_db())
+        user = db.query(User).filter(User.username == token.get("sub")).first()
+        if not user or user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Admin privileges required"
+            )
+        return user
+    except Exception as e:
+        logger.error(f"Error checking admin privileges: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error"
+        )
 
 def verify_auth(username: str, password: str):
-    db = next(get_users_db())
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
+    try:
+        db = next(get_users_db())
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            return False
+        return verify_password(password, user.password_hash)
+    except Exception as e:
+        logger.error(f"Error verifying authentication: {str(e)}")
         return False
-    return verify_password(password, user.password_hash)
 
 def register_user(username: str, password: str, role: str = None):
-    db = next(get_users_db())
-    
-    # Validate role as string
-    valid_roles = ["admin", "analyst"]
-    if role not in valid_roles:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be 'admin' or 'analyst'")
-    
-    if db.query(User).filter(User.username == username).first():
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
-    # Create user with string role
-    user = User(
-        username=username,
-        password_hash=get_password_hash(password),
-        role=role  # Will store as plain string
-    )
-    db.add(user)
-    db.commit()
-    return user
+    try:
+        db = next(get_users_db())
+        
+        valid_roles = ["admin", "analyst"]
+        if role not in valid_roles:
+            raise HTTPException(status_code=400, detail="Invalid role. Must be 'admin' or 'analyst'")
+        
+        if db.query(User).filter(User.username == username).first():
+            raise HTTPException(status_code=400, detail="Username already registered")
+        
+        user = User(
+            username=username,
+            password_hash=get_password_hash(password),
+            role=role
+        )
+        db.add(user)
+        db.commit()
+        return user
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error registering user: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error"
+        )

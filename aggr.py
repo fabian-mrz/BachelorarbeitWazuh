@@ -19,14 +19,10 @@ BATCH_SIZE = 50  # Reduced batch size
 MAX_BUFFER_SIZE = 100  # Limit buffer size
 CLEANUP_INTERVAL = 60  # Cleanup every minute
 FILE_CHECK_INTERVAL = 5  # Check every 5 seconds
+token = "1234"
 
 # Setup
 os.makedirs(CSV_STORAGE_DIR, exist_ok=True)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 class EventProcessor:
     def __init__(self):
@@ -40,10 +36,14 @@ class EventProcessor:
     
     def stream_json_events(self, filepath: str) -> Generator[Dict, None, None]:
         """Stream JSON events instead of loading entire file"""
-        with open(filepath, 'rb') as f:
-            parser = ijson.items(f, 'item')
-            for event in parser:
-                yield event
+        try:
+            with open(filepath, 'rb') as f:
+                parser = ijson.items(f, 'item')
+                for event in parser:
+                    yield event
+        except (OSError, ijson.JSONError) as e:
+            logger.error(f"Error streaming JSON events from {filepath}: {e}")
+            raise
 
     def save_events_to_csv(self, events: List[Dict], rule_id: str) -> str:
         """Save events to CSV file with chunking"""
@@ -52,11 +52,15 @@ class EventProcessor:
         os.makedirs(directory, exist_ok=True)
         csv_path = os.path.join(directory, 'events.csv')
         
-        # Write CSV in chunks
-        for i in range(0, len(events), 1000):
-            chunk = events[i:i + 1000]
-            mode = 'w' if i == 0 else 'a'
-            pd.DataFrame(chunk).to_csv(csv_path, index=False, mode=mode, header=(i == 0))
+        try:
+            # Write CSV in chunks
+            for i in range(0, len(events), 1000):
+                chunk = events[i:i + 1000]
+                mode = 'w' if i == 0 else 'a'
+                pd.DataFrame(chunk).to_csv(csv_path, index=False, mode=mode, header=(i == 0))
+        except (OSError, pd.errors.EmptyDataError) as e:
+            logger.error(f"Error saving events to CSV for rule {rule_id}: {e}")
+            raise
         
         return f'/incidents/{incident_id}/events.csv'
     
@@ -105,15 +109,15 @@ class EventProcessor:
                 json=incident,
                 headers={
                     "Content-Type": "application/json",
-                    "X-API-Key": "token1234"
+                    "X-API-Key": token
                 },
                 verify=False  # Disable SSL verification
             )
             response.raise_for_status()
             logger.info(f"✅ Created incident for rule {rule_id}")
-        except Exception as e:
-            logger.error(f"Failed to create incident: {e}")
-            if hasattr(e, 'response'):
+        except requests.RequestException as e:
+            logger.error(f"Failed to create incident for rule {rule_id}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Response body: {e.response.text}")
 
     def process_file(self, filepath: str, rule_id: str):

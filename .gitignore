@@ -36,3 +36,4 @@ cert.pem
 key.pem
 incidents.db
 incidents.db
+/logs
