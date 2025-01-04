@@ -77,6 +77,8 @@
             </div>
         </div>
 
+        <div id="error-message"></div>
+
         <button onclick="saveEscalations()" class="save-btn">Save Changes</button>
     </div>
 
@@ -190,41 +192,58 @@
         }
 
         function createPhaseHTML(phase, phaseIndex, ruleId = 'default') {
-            const contactOptions = Object.entries(contactsData.contacts)
-                .map(([id, contact]) => `
-                    <option value="${id}">${contact.name} (${phase.type === 'email' ? contact.email : contact.phone})</option>
-                `).join('');
+            const contactOptions = Object.entries(contactsData.contacts || {})
+            .map(([id, contact]) => {
+                if (!contact) return '';
+                return `
+                <option value="${id}">${contact.name || 'Unknown'} 
+                    (${phase.type === 'email' ? contact.email || 'No email' : contact.phone || 'No phone'})</option>
+                `;
+            }).filter(Boolean).join('');
+
+            const selectedContacts = phase.contacts.map(contactId => {
+            const contact = contactsData.contacts?.[contactId];
+            if (!contact) return '';
+            return `
+                <span class="contact-chip">
+                ${contact.name || 'Unknown'}
+                <span class="remove-contact" 
+                      onclick="removeContact('${ruleId}', ${phaseIndex}, '${contactId}')">×</span>
+                </span>
+            `;
+            }).filter(Boolean).join('');
 
             return `
-                <div class="phase-container">
-                    <div class="phase-header">
-                        <h4>Phase ${phaseIndex + 1} - ${phase.type.charAt(0).toUpperCase() + phase.type.slice(1)}</h4>
-                        <div>
-                            Delay: <input type="number" 
-                                        value="${phase.delay}" 
-                                        class="delay-input"
-                                        onchange="updateDelay('${ruleId}', ${phaseIndex}, this.value)"> minutes
-                        </div>
-                    </div>
-                    <select class="contact-select" 
-                            onchange="addContact('${ruleId}', ${phaseIndex}, this.value)">
-                        <option value="">Select contact...</option>
-                        ${contactOptions}
-                    </select>
-                    <div class="selected-contacts">
-                        ${phase.contacts.map(contactId => {
-                const contact = contactsData.contacts[contactId];
-                return `
-                                <span class="contact-chip">
-                                    ${contact.name}
-                                    <span class="remove-contact" 
-                                          onclick="removeContact('${ruleId}', ${phaseIndex}, '${contactId}')">×</span>
-                                </span>
-                            `;
-            }).join('')}
-                    </div>
+            <div class="phase-container">
+                <div class="phase-header">
+                <h4>Phase ${phaseIndex + 1} - ${phase.type.charAt(0).toUpperCase() + phase.type.slice(1)}</h4>
+                <div>
+                    Delay: <input type="number" 
+                        value="${phase.delay}" 
+                        class="delay-input"
+                        onchange="updateDelay('${ruleId}', ${phaseIndex}, this.value)"> minutes
                 </div>
+                </div>
+                <select class="contact-select" 
+                    onchange="addContact('${ruleId}', ${phaseIndex}, this.value)">
+                <option value="">Select contact...</option>
+                ${contactOptions}
+                </select>
+                <div class="selected-contacts">
+                ${selectedContacts}
+                </div>
+            </div>
             `;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            if (errorDiv) {
+            errorDiv.style.color = 'red';
+            errorDiv.style.padding = '10px';
+            errorDiv.style.marginBottom = '10px';
+            errorDiv.textContent = message;
+            }
         }
 
         function renderEscalations() {

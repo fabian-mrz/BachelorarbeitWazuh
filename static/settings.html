@@ -135,11 +135,8 @@
             background-color: #f5f5f5;
         }
 
-        .button-group {
-            margin-top: 15px;
-            display: flex;
-            gap: 10px;
-        }
+
+        /* General settings*/
 
         .status-message {
             margin-top: 10px;
@@ -161,6 +158,72 @@
             border: 1px solid #f5c6cb;
             display: block;
         }
+
+        .config-section {
+            display: none;
+        }
+
+        .password-form {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+
+        /* Force display of general settings */
+        #generalSettings {
+            display: block;
+        }
+
+
+        /* General spacing */
+        .form-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            width: 150px;
+            text-align: right;
+            margin-right: 15px;
+        }
+
+        .form-group input {
+            flex: 1;
+            max-width: 300px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .button-group {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+
     </style>
 </head>
 
@@ -179,6 +242,31 @@
     <h2>System Settings</h2>
 
     <div id="settingsForm">
+
+        <div class="config-section" id="generalSettings">
+            <h2>Change Password</h2>
+            <div id="message" style="display: none;"></div>
+
+            <form id="changePasswordForm">
+                <div class="form-group">
+                    <label for="oldPassword">Current Password:</label>
+                    <input type="password" id="oldPassword" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="newPassword">New Password:</label>
+                    <input type="password" id="newPassword" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm New Password:</label>
+                    <input type="password" id="confirmPassword" required>
+                </div>
+
+                <button type="submit" class="save-btn">Change Password</button>
+            </form>
+        </div>
+
         <div class="config-section">
             <h2>Telegram Settings</h2>
             <div class="config-group">
@@ -274,7 +362,7 @@
         </div>
 
 
-        <div class="config-section" id="adminSection">
+        <div class="config-section" id="userManagement">
             <h2>User Management</h2>
             <div class="config-group">
                 <table id="userTable" class="user-table">
@@ -303,74 +391,78 @@
             </div>
         </div>
 
-    </div>
-    <div class="config-section">
-        <h2>Certificate Management</h2>
-        <div class="info-panel">
-            <h3>How to Update SSL Certificate</h3>
-            <ol>
-                <li>Fill out all fields below:
-                    <ul>
-                        <li>Country: Two letter code (e.g., DE for Germany)</li>
-                        <li>State/Province: Your state (e.g., Baden-Württemberg)</li>
-                        <li>City: Your city location</li>
-                        <li>Organization: Your company name</li>
-                        <li>Common Name: Must match your server hostname (default: wazuhserver)</li>
-                        <li>Email: Valid contact email</li>
-                    </ul>
-                </li>
-                <li>Click "Generate Certificate" and wait for confirmation</li>
-                <li>Download the new certificate using "Download Certificate"</li>
-                <li>On your client system:
-                    <ul>
-                        <li>Add the certificate to your trusted certificates</li>
-                        <li>Windows: Import to "Trusted Root Certification Authorities"</li>
-                        <li>macOS: Add to Keychain and trust</li>
-                        <li>Linux: Add to /usr/local/share/ca-certificates/ and run sudo update-ca-certificates</li>
-                    </ul>
-                </li>
-                <li>Restart the server:
-                    <pre>Restart VM</pre>
-                </li>
-            </ol>
-            <div class="warning-note">
-                Note: If you change the Common Name, ensure it matches your server's hostname. 
-                Update your local hosts file (/etc/hosts) with the new hostname if needed.
+
+        <div class="config-section">
+            <h2>Certificate Management</h2>
+            <div class="info-panel">
+                <h3>How to Update SSL Certificate</h3>
+                <ol>
+                    <li>Fill out all fields below:
+                        <ul>
+                            <li>Country: Two letter code (e.g., DE for Germany)</li>
+                            <li>State/Province: Your state (e.g., Baden-Württemberg)</li>
+                            <li>City: Your city location</li>
+                            <li>Organization: Your company name</li>
+                            <li>Common Name: Must match your server hostname (default: wazuhserver)</li>
+                            <li>Email: Valid contact email</li>
+                        </ul>
+                    </li>
+                    <li>Click "Generate Certificate" and wait for confirmation</li>
+                    <li>Download the new certificate using "Download Certificate"</li>
+                    <li>On your client system:
+                        <ul>
+                            <li>Add the certificate to your trusted certificates</li>
+                            <li>Windows: Import to "Trusted Root Certification Authorities"</li>
+                            <li>macOS: Add to Keychain and trust</li>
+                            <li>Linux: Add to /usr/local/share/ca-certificates/ and run sudo update-ca-certificates</li>
+                        </ul>
+                    </li>
+                    <li>Restart the server:
+                        <pre>Restart VM</pre>
+                    </li>
+                </ol>
+                <div class="warning-note">
+                    Note: If you change the Common Name, ensure it matches your server's hostname.
+                    Update your local hosts file (/etc/hosts) with the new hostname if needed.
+                </div>
             </div>
+
+            <div class="config-group">
+                <label>Country (2 letters):</label>
+                <input type="text" id="cert_country" maxlength="2" pattern="[A-Za-z]{2}">
+            </div>
+            <div class="config-group">
+                <label>State/Province:</label>
+                <input type="text" id="cert_state">
+            </div>
+            <div class="config-group">
+                <label>City:</label>
+                <input type="text" id="cert_city">
+            </div>
+            <div class="config-group">
+                <label>Organization:</label>
+                <input type="text" id="cert_organization">
+            </div>
+            <div class="config-group">
+                <label>Common Name:</label>
+                <input type="text" id="cert_common_name">
+            </div>
+            <div class="config-group">
+                <label>Email:</label>
+                <input type="email" id="cert_email">
+            </div>
+            <div class="button-group">
+                <button class="edit-btn" id="generate_cert">Generate Certificate</button>
+                <button class="save-btn" id="download_cert">Download Certificate</button>
+            </div>
+            <div id="cert_status" class="status-message"></div>
         </div>
-        <div class="config-group">
-            <label>Country (2 letters):</label>
-            <input type="text" id="cert_country" maxlength="2" pattern="[A-Za-z]{2}">
+
+        <div class="config-section">
+            <button onclick="saveSettings()" class="btn save-btn">Save Settings</button>
         </div>
-        <div class="config-group">
-            <label>State/Province:</label>
-            <input type="text" id="cert_state">
-        </div>
-        <div class="config-group">
-            <label>City:</label>
-            <input type="text" id="cert_city">
-        </div>
-        <div class="config-group">
-            <label>Organization:</label>
-            <input type="text" id="cert_organization">
-        </div>
-        <div class="config-group">
-            <label>Common Name:</label>
-            <input type="text" id="cert_common_name">
-        </div>
-        <div class="config-group">
-            <label>Email:</label>
-            <input type="email" id="cert_email">
-        </div>
-        <div class="button-group">
-            <button class="edit-btn" id="generate_cert">Generate Certificate</button>
-            <button class="save-btn" id="download_cert">Download Certificate</button>
-        </div>
-        <div id="cert_status" class="status-message"></div>
     </div>
 
-    <button onclick="saveSettings()" class="btn save-btn">Save Settings</button>
-    </div>
     <script>
         function getAuthHeaders() {
             const token = localStorage.getItem('token');
@@ -527,11 +619,14 @@
                 });
                 if (!response.ok) {
                     if (response.status === 401 || response.status === 403) {
-                        window.location.href = '/login.html';
                         return;
                     }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                // make config-section visible
+                document.querySelectorAll('.config-section').forEach(section => {
+                    section.style.display = 'block';
+                });
                 const settings = await response.json();
 
                 // Log raw settings
@@ -629,17 +724,7 @@
             window.location.href = 'login.html';
         });
 
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('DOM fully loaded');
 
-            // Verify token and load settings
-            const token = localStorage.getItem('token');
-            if (!token) {
-                window.location.href = '/login.html';
-                return;
-            }
-            loadSettings();
-        });
 
         async function loadUsers() {
             try {
@@ -715,12 +800,55 @@
         }
 
 
+        function showMessage(message, isError = false) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = message;
+            messageDiv.className = `message ${isError ? 'error' : 'success'}`;
+            messageDiv.style.display = 'block';
+        }
+
+        document.getElementById('changePasswordForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const oldPassword = document.getElementById('oldPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+
+            if (newPassword !== confirmPassword) {
+                showMessage('New passwords do not match', true);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        old_password: oldPassword,
+                        new_password: newPassword
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to change password');
+                }
+
+                showMessage('Password changed successfully');
+                document.getElementById('changePasswordForm').reset();
+            } catch (error) {
+                showMessage(error.message, true);
+            }
+        });
+
+
         window.onload = function () {
             const token = localStorage.getItem('token');
             if (!token) {
                 window.location.href = '/login.html';
                 return;
             }
+            loadSettings();
             loadUsers();
             loadAuditLogs();
             setInterval(loadAuditLogs, 30000); // Refresh every 30 seconds

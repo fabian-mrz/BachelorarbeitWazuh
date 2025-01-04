@@ -5,6 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import SQLAlchemyError  # Add this import
 from passlib.context import CryptContext
 import logging
 from jwt import ExpiredSignatureError, InvalidTokenError
@@ -77,21 +78,45 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
         )
 
 def is_admin(token = Depends(verify_token)):
+    logger.info("Starting admin check...")
+    
     try:
-        db = next(get_users_db())
-        user = db.query(User).filter(User.username == token.get("sub")).first()
-        if not user or user.role != "admin":
+        if not token or 'sub' not in token:
             raise HTTPException(
-                status_code=403,
-                detail="Admin privileges required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
+
+        db = next(get_users_db())
+        user = db.query(User).filter(User.username == token["sub"]).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+            
+        if user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Admin access required. Current role: {user.role}"
+            )
+            
+        logger.info(f"Admin check successful: {user.username}")
         return user
+        
+    except HTTPException as he:
+        # Let HTTP exceptions propagate as-is
+        raise he
     except Exception as e:
-        logger.error(f"Error checking admin privileges: {str(e)}")
+        logger.error(f"Admin check failed: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Internal server error"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during authorization"
         )
+    finally:
+        if 'db' in locals():
+            db.close()
 
 def verify_auth(username: str, password: str):
     try:

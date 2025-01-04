@@ -48,6 +48,9 @@ BASE_DIR = './'
 STATIC_DIR = './static/incidents'
 TEMPLATES_DIR = './templates'
 DEFAULT_TEMPLATE_PATH = os.path.join(TEMPLATES_DIR, 'default.json')
+LOGS_DIR = "audit_logs"
+CURRENT_LOG_FILE = os.path.join(LOGS_DIR, "current_audit.log")
+
 # Set output directory
 OUTPUT_DIR = Path('/var/ossec/integrations')
 
@@ -583,17 +586,48 @@ async def get_incident(
 
 
 #audit log
+#audit log
 @app.get("/api/audit-logs")
-async def get_audit_logs(token = Depends(verify_token)):
+async def get_audit_logs(token = Depends(is_admin)):
     try:
+        # Debug token
+        logger.debug(f"Received token: {token}")
+        
+        # Check if user is properly authenticated
+        if not token:
+            logger.error("No token provided or invalid token")
+            raise HTTPException(status_code=401, detail="Authentication required")
+
         logs = []
-        if os.path.exists(CURRENT_LOG_FILE):
+        # Verify file path
+        logger.debug(f"Checking log file at: {CURRENT_LOG_FILE}")
+        if not os.path.exists(CURRENT_LOG_FILE):
+            logger.error(f"Log file not found at {CURRENT_LOG_FILE}")
+            return []
+            
+        try:
             with open(CURRENT_LOG_FILE, 'r') as f:
-                logs = [json.loads(line) for line in f.readlines()]
+                for line_number, line in enumerate(f, 1):
+                    try:
+                        log_entry = json.loads(line)
+                        logs.append(log_entry)
+                    except json.JSONDecodeError as je:
+                        logger.error(f"Invalid JSON at line {line_number}: {line.strip()}")
+                        continue
+                        
+        except PermissionError:
+            logger.error(f"Permission denied reading {CURRENT_LOG_FILE}")
+            raise HTTPException(status_code=500, detail="Permission error reading logs")
+            
         return logs[-100:]  # Return last 100 logs
+        
+    except HTTPException as he:
+        logger.error(f"HTTP Exception in audit logs: {str(he)}")
+        raise he
     except Exception as e:
         logger.error(f"Error fetching audit logs: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error fetching audit logs")
+        logger.exception("Full traceback:")
+        raise HTTPException(status_code=500, detail=f"Error fetching audit logs: {str(e)}")
 
 @app.get("/api/audit-logs/download")
 async def download_audit_logs(token = Depends(verify_token)):
@@ -789,10 +823,6 @@ async def save_escalations(escalations: dict, token = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # contacts
-
-
-
-# Updated endpoints
 @app.get("/api/contacts")
 async def get_contacts(db: Session = Depends(get_users_db), token = Depends(verify_token)):
     try:
@@ -826,61 +856,115 @@ async def create_contact(
             (User.email == contact.email) | 
             (User.username == contact.email)
         )
-        logger.debug(f"Checking for existing user with query: {str(existing_query)}")
-        
         existing = existing_query.first()
         if existing:
-            logger.warning(f"User already exists: {existing.email}")
             raise HTTPException(
                 status_code=409,
                 detail=f"User with email {contact.email} already exists"
             )
     
-        try:
-            temp_password = secrets.token_urlsafe(12)
-            if not temp_password:
-                raise ValueError("Failed to generate password")
-                
-            hashed = bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode()
+        temp_password = secrets.token_urlsafe(12)
+        if not temp_password:
+            raise ValueError("Failed to generate password")
             
-            user = User(
-                username=contact.email,
-                name=contact.name,
-                email=contact.email,
-                phone=contact.phone,
-                department=contact.department,
-                role=contact.role,
-                password_hash=hashed
-            )
+        hashed = bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode()
+        
+        user = User(
+            username=contact.email,
+            name=contact.name,
+            email=contact.email,
+            phone=contact.phone,
+            department=contact.department,
+            role=contact.role,
+            password_hash=hashed
+        )
+        
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        logger.info(f"Created new user: {user.email}")
+        
+        await send_email_notification(
+            contact={"email": user.email, "name": user.name},
+            message=f"Your temporary password is: {temp_password}"
+        )
+        
+        # Fix: Access token subject properly
+        username = token.username if hasattr(token, 'username') else str(token)
+        add_audit_log("Create Contact", username, f"Created contact: {user.email}")
+        
+        return {"id": user.id, "message": "Contact created successfully"}
             
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-            
-            logger.info(f"Created new user: {user.email}")
-            
-            await send_email_notification(
-                contact={"email": user.email, "name": user.name},
-                message=f"Your temporary password is: {temp_password}"
-            )
-            add_audit_log("Create Contact", token["sub"], f"Created contact: {user.email}")
-            
-            return {"id": user.id, "message": "Contact created successfully"}
-            
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Database error: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-            
-    except HTTPException as he:
-        logger.error(f"HTTP Exception: {str(he.detail)}")
-        raise
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        db.rollback()
+        logger.error(f"Error creating contact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 
+
+@app.delete("/api/contacts/{contact_id}")
+async def delete_contact(contact_id: str, db: Session = Depends(get_users_db), token = Depends(is_admin)):
+    try:
+        user_id = int(contact_id.replace("contact_", ""))
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        db.delete(user)
+        db.commit()
+        add_audit_log("Delete Contact", token.username, f"Deleted contact: {user.email}")
+        return {"message": "Contact deleted"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid contact ID")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/contacts/{contact_id}")
+async def update_contact(contact_id: str, contact: dict, db: Session = Depends(get_users_db), token = Depends(is_admin)):
+    try:
+        user_id = int(contact_id.replace("contact_", ""))
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Contact not found")
+            
+        user.username = contact["email"]
+        user.name = contact["name"]
+        user.email = contact["email"]
+        user.phone = contact.get("phone")
+        user.department = contact.get("department")
+        user.role = contact.get("role")
+        user.updated_at = datetime.utcnow()
+        
+        db.commit()
+        add_audit_log("Update Contact", token.username, f"Updated contact: {user.email}")
+        return {"message": "Contact updated"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid contact ID")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/users", response_model=List[UserResponse])
+async def get_users(admin_user: User = Depends(is_admin)):
+    try:
+        db = next(get_users_db())
+        users = db.query(User).all()
+        return [
+            UserResponse(
+                id=user.id,
+                username=user.username,
+                role=user.role
+            ) for user in users
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+
+# Change pw
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(
         plain_password.encode(), 
@@ -906,56 +990,13 @@ async def change_password(
         # Update password
         user.password_hash = hash_password(request.new_password)
         db.commit()
-        
+        add_audit_log("Change Password by", user.username)
         return {"message": "Password updated successfully"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/api/contacts/{contact_id}")
-async def delete_contact(contact_id: str, db: Session = Depends(get_users_db), token = Depends(is_admin)):
-    try:
-        user_id = int(contact_id.replace("contact_", ""))
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="Contact not found")
-        db.delete(user)
-        db.commit()
-        add_audit_log("Delete Contact", token["sub"], f"Deleted contact: {contact_id}")
-        return {"message": "Contact deleted"}
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid contact ID")
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.put("/api/contacts/{contact_id}")
-async def update_contact(contact_id: str, contact: dict, db: Session = Depends(get_users_db), token = Depends(is_admin)):
-    try:
-        user_id = int(contact_id.replace("contact_", ""))
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="Contact not found")
-            
-        user.username = contact["email"]
-        user.name = contact["name"]
-        user.email = contact["email"]
-        user.phone = contact.get("phone")
-        user.department = contact.get("department")
-        user.role = contact.get("role")
-        user.updated_at = datetime.utcnow()
-        
-        db.commit()
-        add_audit_log("Update Contact", token["sub"], f"Updated contact: {contact_id}")
-        return {"message": "Contact updated"}
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid contact ID")
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    
-
-
+#admin reset
 @app.put("/api/admin/reset-password/{user_id}")
 async def admin_reset_password(
     user_id: int,
@@ -977,23 +1018,6 @@ async def admin_reset_password(
         
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-@app.get("/api/users", response_model=List[UserResponse])
-async def get_users(admin_user: User = Depends(is_admin)):
-    try:
-        db = next(get_users_db())
-        users = db.query(User).all()
-        return [
-            UserResponse(
-                id=user.id,
-                username=user.username,
-                role=user.role
-            ) for user in users
-        ]
-    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
 # suppression
