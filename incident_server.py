@@ -209,9 +209,17 @@ async def send_notifications(incident_id: str, db: Session):
         # Do the same for phone message, which should replace newlines with dots and remove special characters
         phone_message = clean_message_for_phone(message)
 
-        # Immediate notifications (email and telegram)
+        #Telegram
+        if config['telegram'].get('enabled', 'False').lower() == 'true':
+            try:
+                await send_telegram_notification(message, csv_path)
+            except Exception as e:
+                logger.error(f"Error sending Telegram notification: {e}")
+
+        # Immediate notifications email
         for email in escalation['phases'][0]['contacts']:
             contact = next((c for c in contacts.values() if c['email'] == email), None)
+            print(contact)
             if not contact:
                 logger.error(f"Contact not found for email: {email}")
                 continue
@@ -222,13 +230,6 @@ async def send_notifications(incident_id: str, db: Session):
                     await send_email_notification(contact, message, csv_path)
                 except Exception as e:
                     logger.error(f"Error sending email to {email}: {e}")
-
-            # Send telegram if enabled    
-            if config['telegram'].get('enabled', 'False').lower() == 'true':
-                try:
-                    await send_telegram_notification(message=message, csv_path=csv_path)
-                except Exception as e:
-                    logger.error(f"Error in telegram notification: {e}")
 
         # Handle phone calls
         for phase in escalation['phases']:
