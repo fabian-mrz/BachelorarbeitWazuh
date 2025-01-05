@@ -75,7 +75,7 @@ class LinphoneController:
         """Play audio file in loop while call is active"""
         try:
             wav_file = "output.wav"
-            duration = self._get_wav_duration(wav_file)
+            duration = self._get_wav_duration()
             while self.call_active and not self.stop_audio:
                 logger.info("Playing audio")
                 self._write_command(f"play {wav_file}")
@@ -83,9 +83,10 @@ class LinphoneController:
         except Exception as e:
             logger.error(f"Error in audio loop: {e}")
 
-    def _get_wav_duration(self, filename: str) -> float:
+    def _get_wav_duration(self) -> float:
         """Get duration of wav file in seconds using ffprobe"""
         try:
+            filename = "output.wav"
             cmd = [
                 'ffprobe', 
                 '-v', 'quiet',
@@ -150,30 +151,35 @@ class LinphoneController:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            time.sleep(3)  # Wait for setup
+
+            time.sleep(6)  # Wait for setup
             
             # Register SIP account
             logger.info("Registering SIP account")
             self._write_command(f"register sip:{self.username}@{self.sip_server} {self.password}")
-            time.sleep(1)  # Wait for registration
+            time.sleep(2)  # Wait for registration
             
             # Configure audio
             logger.info("Configuring audio")
             self._write_command("soundcard use files")
-            time.sleep(1)
+            time.sleep(2)
             
             # Start call
             logger.info(f"Making call to {number}")
             self._write_command(f"call {number}")
             self.call_active = True
+            time.sleep(2)
             
             # Start output reading thread
             logger.info("Starting output thread")
             output_thread = threading.Thread(target=self._read_output)
             output_thread.start()
+            time.sleep(2)
             
             # Wait for timeout or call end
             logger.info(f"Waiting for call to complete (timeout: {timeout} seconds)")
+            timeout=self._get_wav_duration() * 2
+            logger.info(f"Timeout: {timeout}")
             timeout_time = time.time() + timeout
             while self.call_active and time.time() < timeout_time:
                 time.sleep(0.1)

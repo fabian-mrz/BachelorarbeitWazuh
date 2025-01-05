@@ -249,20 +249,30 @@ async def send_notifications(incident_id: str, db: Session):
                         logger.error(f"No valid phone number for contact: {email}")
                         continue
                         
+
                     try:
                         logger.info(f"📞 Calling {contact['name']} ({contact['phone']})")
                         ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknowledge or 5 to skip. {phone_message}")
                         if ack:
-                            incident.acknowledged = True
-                            incident.acknowledged_by = contact['name']
-                            db.commit()
-                            add_audit_log("Incident Acknowledged by Phone Call", contact['name'])
-                            return
+                            # Refresh incident from DB
+                            incident = db.query(IncidentModel).filter(IncidentModel.id == incident.id).first()
+                            if incident:
+                                logger.info(f"Updating incident {incident.id} - Acknowledged by {contact['name']}")
+                                incident.acknowledged = True
+                                incident.acknowledged_by = contact['email']
+                                db.commit()
+                                logger.info(f"✅ Incident {incident.id} successfully acknowledged")
+                                add_audit_log("Incident Acknowledged by Phone Call", contact['name'])
+                                return
+                            else:
+                                logger.error(f"❌ Incident not found in DB for update")
+                                raise Exception("Incident not found")
                         else:
                             add_audit_log("Escalating further. Incident Not Acknowledged by Phone Call", contact['name'])
                             continue
                     except Exception as e:
-                        logger.error(f"Error making phone call to {email}: {e}")
+                        logger.error(f"Error making phone call to {contact['name']}: {e}")
+                        db.rollback()  # Rollback on error
                         continue
 
     except Exception as e:
@@ -372,14 +382,14 @@ async def make_phone_call(contact: dict, message: str) -> bool:
             phone_controller.make_call,
             number=contact['phone'],
             message=message,
-            timeout=60
+            timeout=90
         )
         
         # Execute call with timeout
         try:
             dtmf, success, error = await asyncio.wait_for(
                 loop.run_in_executor(thread_pool, make_call_func),
-                timeout=LinphoneController._get_wav_duration("output.wav") * 2 # Double message duration
+                timeout=LinphoneController._get_wav_duration("output.wav") * 2 + 20
             )
         except asyncio.TimeoutError:
             logger.error(f"❌ Call timed out for {contact['name']}")
@@ -410,7 +420,7 @@ async def make_phone_call(contact: dict, message: str) -> bool:
 async def create_incident(
     incident: Incident,
     db: Session = Depends(get_incidents_db),
-    api_key: str = Depends(verify_api_key)  # Add this line
+    api_key: str = Depends(verify_api_key)
 ):
     try:
         # Parse description
@@ -421,28 +431,35 @@ async def create_incident(
             
         rule_id = incident_data['rule_id']
         
-        # Check only for active (non-archived) incidents
+        # Check for any existing incidents with this rule_id
         existing = db.query(IncidentModel).filter(
-            IncidentModel.description.like(f'%"rule_id": "{rule_id}"%'),
-            IncidentModel.archived == False
-        ).first()
+            IncidentModel.description.like(f'%"rule_id": "{rule_id}"%')
+        ).all()
         
-        if existing and not existing.archived:
-            existing.update_count += 1
-            existing.description = incident_data
+        active_incident = next((inc for inc in existing if not inc.archived), None)
+        
+        if active_incident:
+            # Update existing active incident
+            active_incident.update_count += 1
+            active_incident.description = incident_data
             
-            if not existing.acknowledged:
-                existing.acknowledged = incident.acknowledged
-                existing.acknowledged_by = incident.acknowledged_by
-            if not existing.escalated:
-                existing.escalated = incident.escalated
+            if not active_incident.acknowledged:
+                active_incident.acknowledged = incident.acknowledged
+                active_incident.acknowledged_by = incident.acknowledged_by
+            if not active_incident.escalated:
+                active_incident.escalated = incident.escalated
             
             db.commit()
-            return {"message": "Incident updated", "id": existing.id}
+            return {"message": "Incident updated", "id": active_incident.id}
+        
+        # Create new incident with generated ID if only archived exists
+        new_id = incident.id
+        if any(inc.id == incident.id for inc in existing):
+            timestamp = int(time.time())
+            new_id = f"{incident.id}_{timestamp}"
             
-        # Create new incident
         db_incident = IncidentModel(
-            id=incident.id,
+            id=new_id,
             title=incident.title,
             description=incident_data,
             severity=incident.severity,
@@ -460,12 +477,12 @@ async def create_incident(
         db.add(db_incident)
         db.commit()
         
-        asyncio.create_task(send_notifications(incident.id, db))
-        return {"message": "Incident created", "id": incident.id}
+        asyncio.create_task(send_notifications(new_id, db))
+        return {"message": "Incident created", "id": new_id}
         
     except Exception as e:
         db.rollback()
-        print(f"Error creating incident: {e}")
+        logger.error(f"Error creating incident: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
 
