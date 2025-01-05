@@ -5,9 +5,10 @@ import requests
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Generator
-import logging
+from logger import logger
 import gc
-import ijson  # For streaming JSON parsing
+import ijson
+from configparser import ConfigParser
 
 
 # Constants
@@ -19,7 +20,29 @@ BATCH_SIZE = 50  # Reduced batch size
 MAX_BUFFER_SIZE = 100  # Limit buffer size
 CLEANUP_INTERVAL = 60  # Cleanup every minute
 FILE_CHECK_INTERVAL = 5  # Check every 5 seconds
-token = "1234"
+# Get path to cert relative to script location
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CERT_PATH = os.path.join(SCRIPT_DIR, 'cert.pem')
+
+
+
+
+def get_default_token():
+    config = ConfigParser()
+    try:
+        config.read('config.ini')
+        if 'API' in config and 'tokens' in config['API']:
+            token_pairs = config['API']['tokens'].split(',')
+            for pair in token_pairs:
+                name, token = pair.split(':')
+                if name.strip() == 'default':
+                    return token.strip()
+        raise ValueError("Default token not found in config.ini")
+    except Exception as e:
+        print(f"Error reading config: {str(e)}")
+        return None
+    
+token = get_default_token() or "1234"  # Fallback to "1234" if config read fails
 
 # Setup
 os.makedirs(CSV_STORAGE_DIR, exist_ok=True)
@@ -111,14 +134,13 @@ class EventProcessor:
                     "Content-Type": "application/json",
                     "X-API-Key": token
                 },
-                verify=False  # Disable SSL verification
+                verify=CERT_PATH if os.path.exists(CERT_PATH) else False
             )
             response.raise_for_status()
             logger.info(f"✅ Created incident for rule {rule_id}")
-        except requests.RequestException as e:
-            logger.error(f"Failed to create incident for rule {rule_id}: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response body: {e.response.text}")
+        except requests.exceptions.SSLError as e:
+            logger.error(f"SSL verification failed: {str(e)}")
+            raise
 
     def process_file(self, filepath: str, rule_id: str):
         """Process file in streaming mode"""

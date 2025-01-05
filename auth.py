@@ -14,6 +14,7 @@ import time
 from database import get_users_db
 from models import User
 from logger import logger
+from configparser import ConfigParser
 
 
 
@@ -29,7 +30,15 @@ logger.addHandler(file_handler)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT Configuration
-SECRET_KEY = "asdasdfljnasdkfaljkdflkasfawe8"
+def get_secret_key():
+    config = ConfigParser()
+    try:
+        config.read('config.ini')
+        return config['AUTH']['secret_key']
+    except:
+        return "asdasdfljnasdkfaljkdflkasfawe8"  # fallback
+
+SECRET_KEY = get_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

@@ -450,17 +450,6 @@ async def create_incident(
         raise HTTPException(status_code=500, detail=str(e))
     
 
-def get_username_from_email(email: str, db: Session = Depends(get_users_db)) -> str:
-    """Get user's full name from database using email"""
-    try:
-        user = db.query(User).filter(User.email == email).first()
-        if user and user.full_name:
-            return user.full_name
-        return email.split('@')[0] if '@' in email else email
-    except Exception as e:
-        logger.error(f"Error getting username from email: {e}")
-        return email.split('@')[0] if '@' in email else email
-
 @app.post("/incidents/{incident_id}/acknowledge")
 async def acknowledge_incident(
     incident_id: str, 
@@ -483,7 +472,7 @@ async def acknowledge_incident(
             
         # Update incident
         incident.acknowledged = True
-        incident.acknowledged_by = get_username_from_email(token["sub"])
+        incident.acknowledged_by = token["sub"]
         
         db.commit()
         

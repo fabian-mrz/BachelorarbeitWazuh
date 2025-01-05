@@ -223,7 +223,24 @@
             gap: 10px;
         }
 
+        .token-pair {
+            margin-bottom: 10px;
+        }
 
+        .token-inputs {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .token-inputs input {
+            flex: 1;
+            padding: 5px;
+        }
+
+        .token-controls {
+            margin-top: 10px;
+        }
     </style>
 </head>
 
@@ -268,77 +285,89 @@
         </div>
 
         <div class="config-section">
-            <h2>Telegram Settings</h2>
+            <h2>Configuration Settings</h2>
+
+            <h3>Telegram Settings</h3>
             <div class="config-group">
-                <label>Chat ID:</label>
-                <input type="text" id="telegram_chat_id">
+            <label>Chat ID:</label>
+            <input type="text" id="telegram_chat_id">
             </div>
             <div class="config-group">
-                <label>Bot Token:</label>
-                <input type="password" id="telegram_bot_token">
+            <label>Bot Token:</label>
+            <input type="password" id="telegram_bot_token">
             </div>
             <div class="config-group">
-                <label>Enabled:</label>
-                <label class="switch">
-                    <input type="checkbox" id="telegram_enabled">
-                    <span class="slider round"></span>
-                </label>
+            <label>Enabled:</label>
+            <label class="switch">
+                <input type="checkbox" id="telegram_enabled">
+                <span class="slider round"></span>
+            </label>
+            </div>
+
+            <h3>SMTP Settings</h3>
+            <div class="config-group">
+            <label>Server:</label>
+            <input type="text" id="smtp_server">
+            </div>
+            <div class="config-group">
+            <label>Port:</label>
+            <input type="number" id="smtp_port">
+            </div>
+            <div class="config-group">
+            <label>Username:</label>
+            <input type="text" id="smtp_username">
+            </div>
+            <div class="config-group">
+            <label>Password:</label>
+            <input type="password" id="smtp_password">
+            </div>
+            <div class="config-group">
+            <label>From:</label>
+            <input type="email" id="smtp_from">
+            </div>
+            <div class="config-group">
+            <label>Enabled:</label>
+            <label class="switch">
+                <input type="checkbox" id="smtp_enabled">
+                <span class="slider round"></span>
+            </label>
+            </div>
+
+            <h3>SIP Settings</h3>
+            <div class="config-group">
+            <label>Username:</label>
+            <input type="text" id="sip_username">
+            </div>
+            <div class="config-group">
+            <label>Password:</label>
+            <input type="password" id="sip_password">
+            </div>
+            <div class="config-group">
+            <label>Host:</label>
+            <input type="text" id="sip_host">
+            </div>
+            <div class="config-group">
+            <label>Enabled:</label>
+            <label class="switch">
+                <input type="checkbox" id="sip_enabled">
+                <span class="slider round"></span>
+            </label>
+            </div>
+
+            <h3>API Tokens</h3>
+            <div id="token-container">
+            <!-- Token pairs will be added here dynamically -->
+            </div>
+            <div class="config-group token-controls">
+                <p><strong>Please do not remove default token. It is used by the wazuh aggegation script.</strong></p>
+            <button type="button" class="save-btn" onclick="addTokenPair()">Add Token</button>
+            </div>
+
+            <div class="config-group">
+            <button onclick="saveSettings()" class="btn save-btn">Save Settings</button>
             </div>
         </div>
 
-        <div class="config-section">
-            <h2>SMTP Settings</h2>
-            <div class="config-group">
-                <label>Server:</label>
-                <input type="text" id="smtp_server">
-            </div>
-            <div class="config-group">
-                <label>Port:</label>
-                <input type="number" id="smtp_port">
-            </div>
-            <div class="config-group">
-                <label>Username:</label>
-                <input type="text" id="smtp_username">
-            </div>
-            <div class="config-group">
-                <label>Password:</label>
-                <input type="password" id="smtp_password">
-            </div>
-            <div class="config-group">
-                <label>From:</label>
-                <input type="email" id="smtp_from">
-            </div>
-            <div class="config-group">
-                <label>Enabled:</label>
-                <label class="switch">
-                    <input type="checkbox" id="smtp_enabled">
-                    <span class="slider round"></span>
-                </label>
-            </div>
-        </div>
-
-        <div class="config-section">
-            <h2>SIP Settings</h2>
-            <div class="config-group">
-                <label>Username:</label>
-                <input type="text" id="sip_username">
-            </div>
-            <div class="config-group">
-                <label>Password:</label>
-                <input type="password" id="sip_password">
-            </div>
-            <div class="config-group">
-                <label>Host:</label>
-                <input type="text" id="sip_host">
-            </div>
-            <div class="config-group">
-                <label>Enabled:</label>
-                <label class="switch">
-                    <input type="checkbox" id="sip_enabled">
-                    <span class="slider round"></span>
-                </label>
-            </div>
-        </div>
         <div class="config-section">
             <h2>Audit Log</h2>
             <div class="audit-controls">
@@ -458,10 +487,7 @@
             <div id="cert_status" class="status-message"></div>
         </div>
 
-        <div class="config-section">
-            <button onclick="saveSettings()" class="btn save-btn">Save Settings</button>
-        </div>
-    </div>
+
 
     <script>
         function getAuthHeaders() {
@@ -632,6 +658,26 @@
                 // Log raw settings
                 console.log('Raw settings:', settings);
 
+                // Load API Tokens
+                const tokenContainer = document.getElementById('token-container');
+                tokenContainer.innerHTML = ''; // Clear existing tokens
+
+                if (settings.api && settings.api.tokens) {
+                    Object.entries(settings.api.tokens).forEach(([name, token]) => {
+                        const pairDiv = document.createElement('div');
+                        pairDiv.className = 'token-pair config-group';
+                        pairDiv.innerHTML = `
+                    <div class="token-inputs">
+                        <input type="text" class="token-name" value="${name}" readonly>
+                        <input type="password" class="token-value" value="${token}">
+                        <button type="button" class="delete-btn" onclick="this.parentElement.parentElement.remove()">Remove</button>
+                    </div>
+                `;
+                        tokenContainer.appendChild(pairDiv);
+                    });
+                }
+
+
                 // Set default values if settings sections are undefined
                 const telegram = {
                     ...settings.telegram,
@@ -678,6 +724,17 @@
         }
 
         async function saveSettings() {
+            // Collect token pairs
+            const tokenPairs = document.querySelectorAll('.token-pair');
+            const tokens = {};
+            tokenPairs.forEach(pair => {
+                const name = pair.querySelector('.token-name').value;
+                const token = pair.querySelector('.token-value').value;
+                if (name && token) {
+                    tokens[name] = token;
+                }
+            });
+
             const settings = {
                 telegram: {
                     enabled: document.getElementById('telegram_enabled').checked,
@@ -697,6 +754,9 @@
                     username: document.getElementById('sip_username').value,
                     password: document.getElementById('sip_password').value,
                     host: document.getElementById('sip_host').value
+                },
+                api: {
+                    tokens: tokens
                 }
             };
 
@@ -718,11 +778,6 @@
                 alert('Error saving settings');
             }
         }
-
-        document.getElementById('logoutBtn').addEventListener('click', function () {
-            localStorage.removeItem('token');
-            window.location.href = 'login.html';
-        });
 
 
 
@@ -840,6 +895,23 @@
                 showMessage(error.message, true);
             }
         });
+
+        //token management
+        function addTokenPair() {
+            const container = document.getElementById('token-container');
+            const pairDiv = document.createElement('div');
+            pairDiv.className = 'token-pair config-group';
+
+            pairDiv.innerHTML = `
+                    <div class="token-inputs">
+                        <input type="text" placeholder="Name" class="token-name">
+                        <input type="password" placeholder="Token" class="token-value">
+                        <button type="button" class="delete-btn" onclick="this.parentElement.parentElement.remove()">Remove</button>
+                    </div>
+                `;
+
+            container.appendChild(pairDiv);
+        }
 
 
         window.onload = function () {

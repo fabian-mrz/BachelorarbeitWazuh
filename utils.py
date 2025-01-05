@@ -9,6 +9,7 @@ from fastapi import Security, HTTPException, status
 import configparser
 from pathlib import Path
 from logger import logger
+from configparser import ConfigParser
 
 # Constants
 LOGS_DIR = "audit_logs"
@@ -25,10 +26,31 @@ os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 # Add after other constants
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
-API_TOKENS = [
-    "token1234",  # Replace later in config ini
-    "token5678"
-]
+
+
+def load_api_tokens() -> dict:
+    """Load API tokens from config.ini"""
+    tokens = {}
+    config = ConfigParser()
+    
+    try:
+        config.read('config.ini')
+        if 'API' in config and 'tokens' in config['API']:
+            token_pairs = config['API']['tokens'].split(',')
+            for pair in token_pairs:
+                name, token = pair.split(':')
+                tokens[token.strip()] = name.strip()
+        return tokens
+    except Exception as e:
+        logger.error(f"Error loading API tokens: {e}")
+        return {}
+
+# Initialize global API tokens
+API_TOKENS = load_api_tokens()
+
+
+
+
 # Add before the endpoint
 async def verify_api_key(api_key: str = Security(API_KEY_HEADER)):
     if api_key not in API_TOKENS:
@@ -135,6 +157,15 @@ def clean_message_for_phone(message: str) -> str:
 def read_config() -> dict:
     try:
         config.read('config.ini')
+        
+        # Parse API tokens string into dictionary
+        api_tokens = {}
+        if 'API' in config and 'tokens' in config['API']:
+            token_pairs = config['API']['tokens'].split(',')
+            for pair in token_pairs:
+                name, token = pair.split(':')
+                api_tokens[name.strip()] = token.strip()
+                
         return {
             "telegram": {
                 "CHAT_ID": str(config['telegram']['CHAT_ID']),
@@ -142,7 +173,10 @@ def read_config() -> dict:
                 "enabled": config['telegram']['enabled']
             },
             "smtp": dict(config['SMTP']),
-            "sip": dict(config['SIP'])
+            "sip": dict(config['SIP']),
+            "api": {
+                "tokens": api_tokens
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading config: {str(e)}")
@@ -169,6 +203,23 @@ def save_config(settings: dict):
         'host': settings['sip']['host'],
         'enabled': settings['sip']['enabled']
     }
+    
+    # Handle API tokens
+    if 'api' in settings and 'tokens' in settings['api']:
+        if not 'API' in config:
+            config['API'] = {}
+            
+        # Validate presence of default token
+        if 'default' not in settings['api']['tokens']:
+            logger.error("Default token missing in API settings")
+            add_audit_log("Settings Update Failed", "system", "Default API token must be present")
+            raise ValueError("Default API token must be present in settings")
+            
+        # Convert tokens dict to string format: name:token,name2:token2
+        token_pairs = []
+        for name, token in settings['api']['tokens'].items():
+            token_pairs.append(f"{name}:{token}")
+        config['API']['tokens'] = ','.join(token_pairs)
     
     try:
         with open('config.ini', 'w') as f:
