@@ -31,7 +31,7 @@ import secrets
 import uvicorn
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 import shutil
-from utils import add_audit_log, init_db, hash_password, load_escalation_config, load_template, process_template_fields, clean_message_for_phone, load_contacts, save_config, read_config, load_suppressions, save_suppressions, verify_api_key, generate_password
+from utils import add_audit_log, init_db, hash_password, load_escalation_config, load_template, process_template_fields, clean_message_for_phone, load_contacts, save_config, read_config, load_suppressions, save_suppressions, verify_api_key, generate_password, generate_openssl_config
 from LinphoneController import LinphoneController
 import secrets
 
@@ -1307,17 +1307,24 @@ async def generate_certificate(cert_data: dict, admin_user: User = Depends(is_ad
                 shutil.copy2(file, backup_file)
                 logger.info(f"Created backup: {backup_file}")
         
-        # Create subject string from sanitized inputs
-        subj = f"/C={cert_data['country']}/ST={cert_data['state']}/L={cert_data['city']}/O={cert_data['organization']}/CN={cert_data['common_name']}/emailAddress={cert_data['email']}"
+        # Generate OpenSSL config file
+        config_content = generate_openssl_config(cert_data)
+        config_file = "openssl.cnf"
+        with open(config_file, "w") as f:
+            f.write(config_content)
         
-        # Generate new certificates
+        # Generate new certificates using config file
         cmd = [
             'openssl', 'req', '-x509', '-newkey', 'rsa:4096', '-nodes',
             '-out', 'cert.pem', '-keyout', 'key.pem',
-            '-days', '365', '-subj', subj
+            '-days', '365', '-config', config_file
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # Clean up config file
+        os.remove(config_file)
+        
         if result.returncode != 0:
             # Restore backups if generation fails
             for file in ['cert.pem', 'key.pem']:
@@ -1325,10 +1332,11 @@ async def generate_certificate(cert_data: dict, admin_user: User = Depends(is_ad
                 if os.path.exists(backup_file):
                     shutil.copy2(backup_file, file)
             raise Exception(f"OpenSSL error: {result.stderr}")
-            
-        add_audit_log("Generate Certificate", admin_user.username, f"Generated new certificate for {cert_data['common_name']}")
+        
+        add_audit_log("Generate Certificate", admin_user.username, 
+                     f"Generated new certificate for {cert_data['common_name']} with SANs")
         return {
-            "message": "Certificate generated successfully",
+            "message": "Certificate generated successfully with SANs",
             "backup_created": True,
             "backup_timestamp": timestamp
         }

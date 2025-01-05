@@ -270,3 +270,30 @@ def generate_password():
     except Exception as e:
         print(f"Error generating password: {e}")
         return None
+    
+def generate_openssl_config(cert_data: dict) -> str:
+    return f"""[req]
+default_bits = 4096
+prompt = no
+default_md = sha256
+x509_extensions = v3_req
+distinguished_name = dn
+
+[dn]
+C = {cert_data['country']}
+ST = {cert_data['state']}
+L = {cert_data['city']}
+O = {cert_data['organization']}
+CN = {cert_data['common_name']}
+emailAddress = {cert_data['email']}
+
+[v3_req]
+basicConstraints = CA:TRUE
+keyUsage = digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = {cert_data['common_name']}
+DNS.2 = localhost
+IP.1 = 127.0.0.1
+"""
