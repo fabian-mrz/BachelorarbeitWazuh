@@ -5,42 +5,71 @@
     <title>Escalation Settings</title>
     <link rel="stylesheet" href="styles.css">
     <style>
-        .phase-container {
-            background: white;
-            padding: 15px;
-            margin: 10px 0;
+        .phase {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin: 15px 0;
         }
 
-        .contact-select {
-            width: 100%;
-            padding: 8px;
-            margin: 5px 0;
-        }
-
-        .phase-header {
-            display: flex;
-            justify-content: space-between;
+        .contact-tag {
+            background: #e3f2fd;
+            border-radius: 20px;
+            padding: 8px 15px;
+            margin: 5px;
+            display: inline-flex;
             align-items: center;
+            font-size: 14px;
+        }
+
+        .remove-contact {
+            color: #f44336;
+            margin-left: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .phase h4 {
+            color: #2196F3;
+            margin: 0 0 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .phase h4::before {
+            content: "📧";
+            font-size: 1.2em;
+        }
+
+        .phase h4[data-type="phone"]::before {
+            content: "📞";
         }
 
         .delay-input {
-            width: 80px;
-            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 8px;
         }
 
-        .selected-contacts {
+        .contact-select {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
             margin: 10px 0;
+            width: 100%;
         }
 
-        .contact-chip {
-            background: #e0e0e0;
-            padding: 5px 10px;
-            margin: 2px;
-            border-radius: 15px;
-            display: inline-block;
+        .contact-tag.phone {
+            background: #fff3e0;
+            border-left: 3px solid #ff9800;
         }
 
-  
+        .contact-tag.email {
+            background: #e3f2fd;
+            border-left: 3px solid #2196F3;
+        }
     </style>
 </head>
 
@@ -104,47 +133,28 @@
             },
             rules: {}
         };
-        let contactsData = {};
+        let contacts = {};
 
         async function loadContacts() {
             try {
-                const headers = getAuthHeaders();
-                console.log('Contact request headers:', headers);
-
                 const response = await fetch('/api/contacts', {
-                    method: 'GET',
-                    headers: headers
-                });
-
-                console.log('Contacts response status:', response.status);
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('Contacts error response:', errorText);
-
-                    if (response.status === 401 || response.status === 403) {
-                        console.log('Authentication failed - redirecting to login');
-                        localStorage.removeItem('token');
-                        window.location.href = '/login.html';
-                        return;
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
                     }
-                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-                }
-
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
-                console.log('Contacts data received:', data);
 
-                if (!data) {
-                    throw new Error('No contacts data received');
-                }
+                // Map contacts by email
+                contacts = Object.values(data.contacts).reduce((acc, contact) => {
+                    acc[contact.email] = contact;
+                    return acc;
+                }, {});
 
-                contactsData = data;
-                return contactsData;
-
+                return true;
             } catch (error) {
-                console.error('Error loading contacts:', error);
-                showError(`Failed to load contacts: ${error.message}`);
-                throw error;
+                showError(`Error loading contacts: ${error.message}`);
+                return false;
             }
         }
 
@@ -152,6 +162,8 @@
             try {
                 const headers = getAuthHeaders();
                 console.log('Escalations request headers:', headers);
+
+                await loadContacts();
 
                 const response = await fetch('/api/escalations', {
                     method: 'GET',
@@ -192,57 +204,56 @@
         }
 
         function createPhaseHTML(phase, phaseIndex, ruleId = 'default') {
-            const contactOptions = Object.entries(contactsData.contacts || {})
-            .map(([id, contact]) => {
-                if (!contact) return '';
-                return `
-                <option value="${id}">${contact.name || 'Unknown'} 
-                    (${phase.type === 'email' ? contact.email || 'No email' : contact.phone || 'No phone'})</option>
-                `;
-            }).filter(Boolean).join('');
+            const contactOptions = Object.values(contacts)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(contact => `
+            <option value="${contact.email}">
+                ${contact.name} (${phase.type === 'phone' ? contact.phone || 'No phone' : contact.email})
+            </option>
+        `).join('');
 
-            const selectedContacts = phase.contacts.map(contactId => {
-            const contact = contactsData.contacts?.[contactId];
-            if (!contact) return '';
-            return `
-                <span class="contact-chip">
-                ${contact.name || 'Unknown'}
-                <span class="remove-contact" 
-                      onclick="removeContact('${ruleId}', ${phaseIndex}, '${contactId}')">×</span>
-                </span>
-            `;
-            }).filter(Boolean).join('');
+            const selectedContacts = phase.contacts
+                .map(email => {
+                    const contact = Object.values(contacts).find(c => c.email === email);
+                    const displayInfo = phase.type === 'phone'
+                        ? `${contact ? contact.name : email} ${contact?.phone ? `- 📞 ${contact.phone}` : ''}`
+                        : `${contact ? contact.name : email}`;
+
+                    return `
+            <div class="contact-tag ${phase.type}">
+                ${displayInfo}
+                <span onclick="removeContact('${ruleId}', ${phaseIndex}, '${email}')" 
+                      class="remove-contact">×</span>
+            </div>`;
+                }).join('');
 
             return `
-            <div class="phase-container">
-                <div class="phase-header">
-                <h4>Phase ${phaseIndex + 1} - ${phase.type.charAt(0).toUpperCase() + phase.type.slice(1)}</h4>
-                <div>
-                    Delay: <input type="number" 
-                        value="${phase.delay}" 
-                        class="delay-input"
-                        onchange="updateDelay('${ruleId}', ${phaseIndex}, this.value)"> minutes
-                </div>
-                </div>
-                <select class="contact-select" 
-                    onchange="addContact('${ruleId}', ${phaseIndex}, this.value)">
-                <option value="">Select contact...</option>
-                ${contactOptions}
-                </select>
-                <div class="selected-contacts">
-                ${selectedContacts}
-                </div>
-            </div>
-            `;
+    <div class="phase">
+        <h4 data-type="${phase.type}">Phase ${phaseIndex + 1} - ${phase.type.charAt(0).toUpperCase() + phase.type.slice(1)}</h4>
+        <div>
+            Delay: <input type="number" 
+                value="${phase.delay}" 
+                class="delay-input"
+                onchange="updateDelay('${ruleId}', ${phaseIndex}, this.value)"> minutes
+        </div>
+        <select class="contact-select" 
+            onchange="addContact('${ruleId}', ${phaseIndex}, this.value)">
+            <option value="">Select contact...</option>
+            ${contactOptions}
+        </select>
+        <div class="selected-contacts">
+            ${selectedContacts}
+        </div>
+    </div>`;
         }
 
         function showError(message) {
             const errorDiv = document.getElementById('error-message');
             if (errorDiv) {
-            errorDiv.style.color = 'red';
-            errorDiv.style.padding = '10px';
-            errorDiv.style.marginBottom = '10px';
-            errorDiv.textContent = message;
+                errorDiv.style.color = 'red';
+                errorDiv.style.padding = '10px';
+                errorDiv.style.marginBottom = '10px';
+                errorDiv.textContent = message;
             }
         }
 
@@ -267,26 +278,25 @@
                 `).join('');
         }
 
-        function addContact(ruleId, phaseIndex, contactId) {
-            if (!contactId) return;
-
+        function addContact(ruleId, phaseIndex, email) {
+            if (!email) return;
             const target = ruleId === 'default' ?
                 escalationsData.default :
                 escalationsData.rules[ruleId];
 
-            if (!target.phases[phaseIndex].contacts.includes(contactId)) {
-                target.phases[phaseIndex].contacts.push(contactId);
+            if (!target.phases[phaseIndex].contacts.includes(email)) {
+                target.phases[phaseIndex].contacts.push(email);
                 renderEscalations();
             }
         }
 
-        function removeContact(ruleId, phaseIndex, contactId) {
+        function removeContact(ruleId, phaseIndex, email) {
             const target = ruleId === 'default' ?
                 escalationsData.default :
                 escalationsData.rules[ruleId];
 
             target.phases[phaseIndex].contacts = target.phases[phaseIndex].contacts
-                .filter(id => id !== contactId);
+                .filter(e => e !== email);
             renderEscalations();
         }
 
@@ -370,8 +380,13 @@
                 window.location.href = '/login.html';
                 return;
             }
-            await loadContacts();
-            await loadEscalations();
+
+            try {
+                await loadEscalations();
+                await loadContacts();
+            } catch (error) {
+                showError(`Failed to load data: ${error.message}`);
+            }
             setActiveNavLink();
         };
     </script>

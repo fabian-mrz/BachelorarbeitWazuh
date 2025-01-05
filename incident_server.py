@@ -2,10 +2,10 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, constr, validator, conint, Field
 from datetime import datetime, timedelta
 import asyncio
-from typing import List, Tuple, Union, Dict, Optional
+from typing import List, Tuple, Union, Dict, Optional, Literal
 import json
 import configparser
 import os
@@ -149,6 +149,31 @@ class UserResponse(BaseModel):
 class PasswordResetRequest(BaseModel):
     new_password: str
 
+class Phase(BaseModel):
+    type: Literal["email", "phone"]
+    contacts: List[EmailStr]
+    delay: conint(ge=0)  # Ensure non-negative delay
+
+class EscalationRule(BaseModel):
+    phases: List[Phase]
+
+    @validator('phases')
+    def validate_phases(cls, phases):
+        if not phases:
+            raise ValueError("At least one phase required")
+        return phases
+
+class EscalationConfig(BaseModel):
+    default: EscalationRule
+    rules: Dict[str, EscalationRule]
+
+    @validator('rules')
+    def validate_rule_ids(cls, rules):
+        for rule_id in rules.keys():
+            if not rule_id.isdigit():
+                raise ValueError(f"Rule ID must be numeric: {rule_id}")
+        return rules
+
 
 #notification
 async def send_notifications(incident_id: str, db: Session):
@@ -185,33 +210,28 @@ async def send_notifications(incident_id: str, db: Session):
         phone_message = clean_message_for_phone(message)
 
         # Immediate notifications (email and telegram)
-        for contact_id in escalation['phases'][0]['contacts']:
-            contact = contacts[contact_id]
+        for email in escalation['phases'][0]['contacts']:
+            contact = next((c for c in contacts.values() if c['email'] == email), None)
+            if not contact:
+                logger.error(f"Contact not found for email: {email}")
+                continue
             
             # Send email if enabled
-            if contact['email'] and config['SMTP'].get('enabled', 'False').lower() == 'true':
+            if config['SMTP'].get('enabled', 'False').lower() == 'true':
                 try:
                     await send_email_notification(contact, message, csv_path)
                 except Exception as e:
-                    logger.error(f"Error sending email to {contact['email']}: {e}")
+                    logger.error(f"Error sending email to {email}: {e}")
 
             # Send telegram if enabled    
             if config['telegram'].get('enabled', 'False').lower() == 'true':
                 try:
-                    await send_telegram_notification(
-                        message=message,
-                        csv_path=csv_path
-                    )
+                    await send_telegram_notification(message=message, csv_path=csv_path)
                 except Exception as e:
                     logger.error(f"Error in telegram notification: {e}")
 
         # Handle phone calls
         for phase in escalation['phases']:
-            # Check acknowledgment status from db
-            incident = db.query(IncidentModel).filter(
-                IncidentModel.id == incident_id
-            ).first()
-            
             if incident.acknowledged:
                 return
                 
@@ -219,19 +239,17 @@ async def send_notifications(incident_id: str, db: Session):
                 if phase['delay'] > 0:
                     await asyncio.sleep(phase['delay'] * 60)
                 
-                # Recheck acknowledgment after delay
-                incident = db.query(IncidentModel).filter(
-                    IncidentModel.id == incident_id
-                ).first()
-                
                 if incident.acknowledged:
                     return
                 
-                for contact_id in phase['contacts']:
+                for email in phase['contacts']:
+                    contact = next((c for c in contacts.values() if c['email'] == email), None)
+                    if not contact or not contact.get('phone'):
+                        logger.error(f"No valid phone number for contact: {email}")
+                        continue
+                        
                     try:
-                        contact = contacts[contact_id]
                         logger.info(f"📞 Calling {contact['name']} ({contact['phone']})")
-                        # Remove special characters and create newline for new info per line
                         ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknowledge or 5 to skip. {phone_message}")
                         if ack:
                             incident.acknowledged = True
@@ -243,7 +261,7 @@ async def send_notifications(incident_id: str, db: Session):
                             add_audit_log("Escalating further. Incident Not Acknowledged by Phone Call", contact['name'])
                             continue
                     except Exception as e:
-                        logger.error(f"Error making phone call: {e}")
+                        logger.error(f"Error making phone call to {email}: {e}")
                         continue
 
     except Exception as e:
