@@ -915,11 +915,10 @@ async def create_contact(
             message=f"Your temporary password is: {temp_password}"
         )
         
-        # Fix: Access token subject properly
         username = token.username if hasattr(token, 'username') else str(token)
-        add_audit_log("Create Contact", username, f"Created contact: {user.email}")
+        add_audit_log("Created Contact", username, f"Created contact: {user.email})")
         
-        return {"id": user.id, "message": "Contact created successfully"}
+        return {"id": user.id, "message": "Contact created successfully", "password": temp_password}
             
     except Exception as e:
         db.rollback()
