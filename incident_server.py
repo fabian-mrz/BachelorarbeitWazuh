@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, EmailStr, constr, validator, conint, Field
+from pydantic import BaseModel, EmailStr, constr, field_validator, conint, Field
 from datetime import datetime, timedelta
 import asyncio
 from typing import List, Tuple, Union, Dict, Optional, Literal
@@ -157,7 +157,7 @@ class Phase(BaseModel):
 class EscalationRule(BaseModel):
     phases: List[Phase]
 
-    @validator('phases')
+    @field_validator('phases')
     def validate_phases(cls, phases):
         if not phases:
             raise ValueError("At least one phase required")
@@ -167,7 +167,7 @@ class EscalationConfig(BaseModel):
     default: EscalationRule
     rules: Dict[str, EscalationRule]
 
-    @validator('rules')
+    @field_validator('rules')
     def validate_rule_ids(cls, rules):
         for rule_id in rules.keys():
             if not rule_id.isdigit():

@@ -176,6 +176,9 @@ def read_config() -> dict:
             "sip": dict(config['SIP']),
             "api": {
                 "tokens": api_tokens
+            },
+            "auth": {
+                "secret_key": config['AUTH']['secret_key']
             }
         }
     except Exception as e:
@@ -202,6 +205,10 @@ def save_config(settings: dict):
         'password': settings['sip']['password'],
         'host': settings['sip']['host'],
         'enabled': settings['sip']['enabled']
+    }
+
+    config['AUTH'] = {
+        'secret_key': settings['auth']['secret_key']
     }
     
     # Handle API tokens

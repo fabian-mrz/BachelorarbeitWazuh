@@ -289,82 +289,88 @@
 
             <h3>Telegram Settings</h3>
             <div class="config-group">
-            <label>Chat ID:</label>
-            <input type="text" id="telegram_chat_id">
+                <label>Chat ID:</label>
+                <input type="text" id="telegram_chat_id">
             </div>
             <div class="config-group">
-            <label>Bot Token:</label>
-            <input type="password" id="telegram_bot_token">
+                <label>Bot Token:</label>
+                <input type="password" id="telegram_bot_token">
             </div>
             <div class="config-group">
-            <label>Enabled:</label>
-            <label class="switch">
-                <input type="checkbox" id="telegram_enabled">
-                <span class="slider round"></span>
-            </label>
+                <label>Enabled:</label>
+                <label class="switch">
+                    <input type="checkbox" id="telegram_enabled">
+                    <span class="slider round"></span>
+                </label>
             </div>
 
             <h3>SMTP Settings</h3>
             <div class="config-group">
-            <label>Server:</label>
-            <input type="text" id="smtp_server">
+                <label>Server:</label>
+                <input type="text" id="smtp_server">
             </div>
             <div class="config-group">
-            <label>Port:</label>
-            <input type="number" id="smtp_port">
+                <label>Port:</label>
+                <input type="number" id="smtp_port">
             </div>
             <div class="config-group">
-            <label>Username:</label>
-            <input type="text" id="smtp_username">
+                <label>Username:</label>
+                <input type="text" id="smtp_username">
             </div>
             <div class="config-group">
-            <label>Password:</label>
-            <input type="password" id="smtp_password">
+                <label>Password:</label>
+                <input type="password" id="smtp_password">
             </div>
             <div class="config-group">
-            <label>From:</label>
-            <input type="email" id="smtp_from">
+                <label>From:</label>
+                <input type="email" id="smtp_from">
             </div>
             <div class="config-group">
-            <label>Enabled:</label>
-            <label class="switch">
-                <input type="checkbox" id="smtp_enabled">
-                <span class="slider round"></span>
-            </label>
+                <label>Enabled:</label>
+                <label class="switch">
+                    <input type="checkbox" id="smtp_enabled">
+                    <span class="slider round"></span>
+                </label>
             </div>
 
             <h3>SIP Settings</h3>
             <div class="config-group">
-            <label>Username:</label>
-            <input type="text" id="sip_username">
+                <label>Username:</label>
+                <input type="text" id="sip_username">
             </div>
             <div class="config-group">
-            <label>Password:</label>
-            <input type="password" id="sip_password">
+                <label>Password:</label>
+                <input type="password" id="sip_password">
             </div>
             <div class="config-group">
-            <label>Host:</label>
-            <input type="text" id="sip_host">
+                <label>Host:</label>
+                <input type="text" id="sip_host">
             </div>
             <div class="config-group">
-            <label>Enabled:</label>
-            <label class="switch">
-                <input type="checkbox" id="sip_enabled">
-                <span class="slider round"></span>
-            </label>
+                <label>Enabled:</label>
+                <label class="switch">
+                    <input type="checkbox" id="sip_enabled">
+                    <span class="slider round"></span>
+                </label>
             </div>
 
             <h3>API Tokens</h3>
             <div id="token-container">
-            <!-- Token pairs will be added here dynamically -->
+                <!-- Token pairs will be added here dynamically -->
             </div>
             <div class="config-group token-controls">
                 <p><strong>Please do not remove default token. It is used by the wazuh aggegation script.</strong></p>
-            <button type="button" class="save-btn" onclick="addTokenPair()">Add Token</button>
+                <button type="button" class="save-btn" onclick="addTokenPair()">Add Token</button>
+            </div>
+
+            <h3>JWT</h3>
+            <div class="config-group">
+                <label>Secret Key:</label>
+                <input type="password" id="auth_secret_key">
             </div>
 
             <div class="config-group">
-            <button onclick="saveSettings()" class="btn save-btn">Save Settings</button>
+                <button onclick="saveSettings()" class="btn save-btn">Save Settings</button>
             </div>
         </div>
 
@@ -489,309 +495,313 @@
 
 
 
-    <script>
-        function getAuthHeaders() {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                window.location.href = '/login.html';
-                return;
-            }
-            return {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            };
-        }
-
-
-
-        // Certificate Management
-        document.getElementById('generate_cert').addEventListener('click', async () => {
-            const certData = {
-                country: document.getElementById('cert_country').value,
-                state: document.getElementById('cert_state').value,
-                city: document.getElementById('cert_city').value,
-                organization: document.getElementById('cert_organization').value,
-                common_name: document.getElementById('cert_common_name').value,
-                email: document.getElementById('cert_email').value
-            };
-
-            // Validate required fields
-            for (const [key, value] of Object.entries(certData)) {
-                if (!value.trim()) {
-                    const statusDiv = document.getElementById('cert_status');
-                    statusDiv.textContent = `Error: ${key.replace('_', ' ')} is required`;
-                    statusDiv.className = 'status-message error';
+        <script>
+            function getAuthHeaders() {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    window.location.href = '/login.html';
                     return;
                 }
+                return {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                };
             }
 
-            try {
-                const response = await fetch('/api/certificate/generate', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify(certData)
-                });
 
-                if (!response.ok) {
-                    throw new Error(await response.text());
+
+            // Certificate Management
+            document.getElementById('generate_cert').addEventListener('click', async () => {
+                const certData = {
+                    country: document.getElementById('cert_country').value,
+                    state: document.getElementById('cert_state').value,
+                    city: document.getElementById('cert_city').value,
+                    organization: document.getElementById('cert_organization').value,
+                    common_name: document.getElementById('cert_common_name').value,
+                    email: document.getElementById('cert_email').value
+                };
+
+                // Validate required fields
+                for (const [key, value] of Object.entries(certData)) {
+                    if (!value.trim()) {
+                        const statusDiv = document.getElementById('cert_status');
+                        statusDiv.textContent = `Error: ${key.replace('_', ' ')} is required`;
+                        statusDiv.className = 'status-message error';
+                        return;
+                    }
                 }
 
-                const statusDiv = document.getElementById('cert_status');
-                statusDiv.textContent = 'Certificate generated successfully. Please restart Server to apply changes and check hostfile';
-                statusDiv.className = 'status-message success';
-            } catch (error) {
-                const statusDiv = document.getElementById('cert_status');
-                statusDiv.textContent = `Error: ${error.message}`;
-                statusDiv.className = 'status-message error';
-            }
-        });
-        document.getElementById('download_cert').addEventListener('click', async () => {
-            try {
-                const response = await fetch('/api/certificate/download/cert', {
-                    method: 'GET',
-                    headers: getAuthHeaders()
-                });
+                try {
+                    const response = await fetch('/api/certificate/generate', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify(certData)
+                    });
 
-                if (!response.ok) {
-                    throw new Error(await response.text());
+                    if (!response.ok) {
+                        throw new Error(await response.text());
+                    }
+
+                    const statusDiv = document.getElementById('cert_status');
+                    statusDiv.textContent = 'Certificate generated successfully. Please restart Server to apply changes and check hostfile';
+                    statusDiv.className = 'status-message success';
+                } catch (error) {
+                    const statusDiv = document.getElementById('cert_status');
+                    statusDiv.textContent = `Error: ${error.message}`;
+                    statusDiv.className = 'status-message error';
+                }
+            });
+            document.getElementById('download_cert').addEventListener('click', async () => {
+                try {
+                    const response = await fetch('/api/certificate/download/cert', {
+                        method: 'GET',
+                        headers: getAuthHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(await response.text());
+                    }
+
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'cert.pem';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                } catch (error) {
+                    const statusDiv = document.getElementById('cert_status');
+                    statusDiv.textContent = `Error: ${error.message}`;
+                    statusDiv.className = 'status-message error';
+                }
+            });
+
+            // Input validation for country code
+            document.getElementById('cert_country').addEventListener('input', (e) => {
+                e.target.value = e.target.value.toUpperCase();
+                if (e.target.value.length > 2) {
+                    e.target.value = e.target.value.slice(0, 2);
+                }
+            });
+
+
+            async function downloadAuditLogs() {
+                try {
+                    window.location.href = '/api/audit-logs/download';
+                } catch (error) {
+                    console.error('Error downloading audit logs:', error);
+                }
+            }
+
+            async function clearAuditLogs() {
+                if (!confirm('Are you sure you want to clear the audit logs? They will be archived.')) {
+                    return;
                 }
 
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'cert.pem';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-            } catch (error) {
-                const statusDiv = document.getElementById('cert_status');
-                statusDiv.textContent = `Error: ${error.message}`;
-                statusDiv.className = 'status-message error';
-            }
-        });
+                try {
+                    const response = await fetch('/api/audit-logs/clear', {
+                        method: 'POST',
+                        headers: getAuthHeaders()
+                    });
 
-        // Input validation for country code
-        document.getElementById('cert_country').addEventListener('input', (e) => {
-            e.target.value = e.target.value.toUpperCase();
-            if (e.target.value.length > 2) {
-                e.target.value = e.target.value.slice(0, 2);
-            }
-        });
-
-
-        async function downloadAuditLogs() {
-            try {
-                window.location.href = '/api/audit-logs/download';
-            } catch (error) {
-                console.error('Error downloading audit logs:', error);
-            }
-        }
-
-        async function clearAuditLogs() {
-            if (!confirm('Are you sure you want to clear the audit logs? They will be archived.')) {
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/audit-logs/clear', {
-                    method: 'POST',
-                    headers: getAuthHeaders()
-                });
-
-                if (response.ok) {
-                    loadAuditLogs();
-                } else {
-                    alert('Failed to clear audit logs');
+                    if (response.ok) {
+                        loadAuditLogs();
+                    } else {
+                        alert('Failed to clear audit logs');
+                    }
+                } catch (error) {
+                    console.error('Error clearing audit logs:', error);
                 }
-            } catch (error) {
-                console.error('Error clearing audit logs:', error);
             }
-        }
 
-        async function loadAuditLogs() {
-            try {
-                const response = await fetch('/api/audit-logs', {
-                    headers: getAuthHeaders()
-                });
-                if (!response.ok) throw new Error('Failed to fetch audit logs');
+            async function loadAuditLogs() {
+                try {
+                    const response = await fetch('/api/audit-logs', {
+                        headers: getAuthHeaders()
+                    });
+                    if (!response.ok) throw new Error('Failed to fetch audit logs');
 
-                const logs = await response.json();
-                const tbody = document.getElementById('auditLogBody');
-                tbody.innerHTML = '';
+                    const logs = await response.json();
+                    const tbody = document.getElementById('auditLogBody');
+                    tbody.innerHTML = '';
 
-                logs.forEach(log => {
-                    const row = tbody.insertRow();
-                    row.innerHTML = `
+                    logs.forEach(log => {
+                        const row = tbody.insertRow();
+                        row.innerHTML = `
                 <td>${new Date(log.timestamp).toLocaleString()}</td>
                 <td>${log.user || 'System'}</td>
                 <td>${log.action}</td>
                 <td>${log.details}</td>
             `;
-                });
-            } catch (error) {
-                console.error('Error loading audit logs:', error);
-            }
-        }
-
-
-        async function loadSettings() {
-            try {
-                const response = await fetch('/settings', {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
-                });
-                if (!response.ok) {
-                    if (response.status === 401 || response.status === 403) {
-                        return;
-                    }
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    });
+                } catch (error) {
+                    console.error('Error loading audit logs:', error);
                 }
-                // make config-section visible
-                document.querySelectorAll('.config-section').forEach(section => {
-                    section.style.display = 'block';
-                });
-                const settings = await response.json();
+            }
 
-                // Log raw settings
-                console.log('Raw settings:', settings);
 
-                // Load API Tokens
-                const tokenContainer = document.getElementById('token-container');
-                tokenContainer.innerHTML = ''; // Clear existing tokens
+            async function loadSettings() {
+                try {
+                    const response = await fetch('/settings', {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        }
+                    });
+                    if (!response.ok) {
+                        if (response.status === 401 || response.status === 403) {
+                            return;
+                        }
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    // make config-section visible
+                    document.querySelectorAll('.config-section').forEach(section => {
+                        section.style.display = 'block';
+                    });
+                    const settings = await response.json();
 
-                if (settings.api && settings.api.tokens) {
-                    Object.entries(settings.api.tokens).forEach(([name, token]) => {
-                        const pairDiv = document.createElement('div');
-                        pairDiv.className = 'token-pair config-group';
-                        pairDiv.innerHTML = `
+                    // Log raw settings
+                    console.log('Raw settings:', settings);
+
+                    // Load API Tokens
+                    const tokenContainer = document.getElementById('token-container');
+                    tokenContainer.innerHTML = ''; // Clear existing tokens
+
+                    if (settings.api && settings.api.tokens) {
+                        Object.entries(settings.api.tokens).forEach(([name, token]) => {
+                            const pairDiv = document.createElement('div');
+                            pairDiv.className = 'token-pair config-group';
+                            pairDiv.innerHTML = `
                     <div class="token-inputs">
                         <input type="text" class="token-name" value="${name}" readonly>
                         <input type="password" class="token-value" value="${token}">
                         <button type="button" class="delete-btn" onclick="this.parentElement.parentElement.remove()">Remove</button>
                     </div>
                 `;
-                        tokenContainer.appendChild(pairDiv);
-                    });
+                            tokenContainer.appendChild(pairDiv);
+                        });
+                    }
+
+                    // Set default values if settings sections are undefined
+                    const telegram = {
+                        ...settings.telegram,
+                        enabled: settings.telegram?.enabled === 'True'
+                    };
+
+                    const smtp = {
+                        ...settings.smtp,
+                        enabled: settings.smtp?.enabled === 'True'
+                    };
+
+                    const sip = {
+                        ...settings.sip,
+                        enabled: settings.sip?.enabled === 'True'
+                    };
+
+                    // Log enabled states
+                    console.log('Telegram enabled:', telegram.enabled);
+                    console.log('SMTP enabled:', smtp.enabled);
+                    console.log('SIP enabled:', sip.enabled);
+
+                    // Telegram settings with explicit false fallback
+                    document.getElementById('telegram_enabled').checked = telegram.enabled === true;
+                    document.getElementById('telegram_chat_id').value = telegram.CHAT_ID || '';
+                    document.getElementById('telegram_bot_token').value = telegram.BOT_TOKEN || '';
+
+                    // SMTP settings with explicit false fallback
+                    document.getElementById('smtp_enabled').checked = smtp.enabled === true;
+                    document.getElementById('smtp_server').value = smtp.server || '';
+                    document.getElementById('smtp_port').value = smtp.port || '';
+                    document.getElementById('smtp_username').value = smtp.username || '';
+                    document.getElementById('smtp_password').value = smtp.password || '';
+                    document.getElementById('smtp_from').value = smtp.from || '';
+
+                    // SIP settings with explicit false fallback
+                    document.getElementById('sip_enabled').checked = sip.enabled === true;
+                    document.getElementById('sip_username').value = sip.username || '';
+                    document.getElementById('sip_password').value = sip.password || '';
+                    document.getElementById('sip_host').value = sip.host || '';
+
+                    // Auth settings
+                    document.getElementById('auth_secret_key').value = settings.auth?.secret_key || '';
+
+                } catch (error) {
+                    console.error('Error loading settings:', error);
                 }
-
-
-                // Set default values if settings sections are undefined
-                const telegram = {
-                    ...settings.telegram,
-                    enabled: settings.telegram?.enabled === 'True'
-                };
-
-                const smtp = {
-                    ...settings.smtp,
-                    enabled: settings.smtp?.enabled === 'True'
-                };
-
-                const sip = {
-                    ...settings.sip,
-                    enabled: settings.sip?.enabled === 'True'
-                };
-
-                // Log enabled states
-                console.log('Telegram enabled:', telegram.enabled);
-                console.log('SMTP enabled:', smtp.enabled);
-                console.log('SIP enabled:', sip.enabled);
-
-                // Telegram settings with explicit false fallback
-                document.getElementById('telegram_enabled').checked = telegram.enabled === true;
-                document.getElementById('telegram_chat_id').value = telegram.CHAT_ID || '';
-                document.getElementById('telegram_bot_token').value = telegram.BOT_TOKEN || '';
-
-                // SMTP settings with explicit false fallback
-                document.getElementById('smtp_enabled').checked = smtp.enabled === true;
-                document.getElementById('smtp_server').value = smtp.server || '';
-                document.getElementById('smtp_port').value = smtp.port || '';
-                document.getElementById('smtp_username').value = smtp.username || '';
-                document.getElementById('smtp_password').value = smtp.password || '';
-                document.getElementById('smtp_from').value = smtp.from || '';
-
-                // SIP settings with explicit false fallback
-                document.getElementById('sip_enabled').checked = sip.enabled === true;
-                document.getElementById('sip_username').value = sip.username || '';
-                document.getElementById('sip_password').value = sip.password || '';
-                document.getElementById('sip_host').value = sip.host || '';
-
-            } catch (error) {
-                console.error('Error loading settings:', error);
             }
-        }
 
-        async function saveSettings() {
-            // Collect token pairs
-            const tokenPairs = document.querySelectorAll('.token-pair');
-            const tokens = {};
-            tokenPairs.forEach(pair => {
-                const name = pair.querySelector('.token-name').value;
-                const token = pair.querySelector('.token-value').value;
-                if (name && token) {
-                    tokens[name] = token;
-                }
-            });
+            async function saveSettings() {
+                // Collect token pairs
+                const tokenPairs = document.querySelectorAll('.token-pair');
+                const tokens = {};
+                tokenPairs.forEach(pair => {
+                    const name = pair.querySelector('.token-name').value;
+                    const token = pair.querySelector('.token-value').value;
+                    if (name && token) {
+                        tokens[name] = token;
+                    }
+                });
 
-            const settings = {
-                telegram: {
-                    enabled: document.getElementById('telegram_enabled').checked,
-                    CHAT_ID: document.getElementById('telegram_chat_id').value,
-                    BOT_TOKEN: document.getElementById('telegram_bot_token').value
-                },
-                smtp: {
-                    enabled: document.getElementById('smtp_enabled').checked,
-                    server: document.getElementById('smtp_server').value,
-                    port: document.getElementById('smtp_port').value,
-                    username: document.getElementById('smtp_username').value,
-                    password: document.getElementById('smtp_password').value,
-                    from: document.getElementById('smtp_from').value
-                },
-                sip: {
-                    enabled: document.getElementById('sip_enabled').checked,
-                    username: document.getElementById('sip_username').value,
-                    password: document.getElementById('sip_password').value,
-                    host: document.getElementById('sip_host').value
-                },
-                api: {
-                    tokens: tokens
-                }
-            };
-
-            try {
-                const response = await fetch('/settings', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                const settings = {
+                    telegram: {
+                        enabled: document.getElementById('telegram_enabled').checked,
+                        CHAT_ID: document.getElementById('telegram_chat_id').value,
+                        BOT_TOKEN: document.getElementById('telegram_bot_token').value
                     },
-                    body: JSON.stringify(settings)
-                });
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    smtp: {
+                        enabled: document.getElementById('smtp_enabled').checked,
+                        server: document.getElementById('smtp_server').value,
+                        port: document.getElementById('smtp_port').value,
+                        username: document.getElementById('smtp_username').value,
+                        password: document.getElementById('smtp_password').value,
+                        from: document.getElementById('smtp_from').value
+                    },
+                    sip: {
+                        enabled: document.getElementById('sip_enabled').checked,
+                        username: document.getElementById('sip_username').value,
+                        password: document.getElementById('sip_password').value,
+                        host: document.getElementById('sip_host').value
+                    },
+                    api: {
+                        tokens: tokens
+                    },
+                    auth: {
+                        secret_key: document.getElementById('auth_secret_key').value
+                    }
+                };
+
+                try {
+                    const response = await fetch('/settings', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify(settings)
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    alert('Settings saved successfully!');
+                } catch (error) {
+                    console.error('Error saving settings:', error);
+                    alert('Error saving settings');
                 }
-                alert('Settings saved successfully!');
-            } catch (error) {
-                console.error('Error saving settings:', error);
-                alert('Error saving settings');
             }
-        }
 
 
-
-        async function loadUsers() {
-            try {
-                const response = await fetch('/api/users', {
-                    headers: getAuthHeaders()
-                });
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const users = await response.json();
-                const table = document.getElementById('userTable');
-                table.innerHTML = `
+            async function loadUsers() {
+                try {
+                    const response = await fetch('/api/users', {
+                        headers: getAuthHeaders()
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const users = await response.json();
+                    const table = document.getElementById('userTable');
+                    table.innerHTML = `
                     <tr>
                         <th>ID</th>
                         <th>Username</th>
@@ -800,9 +810,9 @@
                     </tr>
                 `;
 
-                users.forEach(user => {
-                    const row = table.insertRow();
-                    row.innerHTML = `
+                    users.forEach(user => {
+                        const row = table.insertRow();
+                        row.innerHTML = `
                 <td>${user.id}</td>
                 <td>${user.username}</td>
                 <td>${user.role}</td>
@@ -811,98 +821,98 @@
                             class="edit-btn">Reset Password</button>
                 </td>
             `;
-                });
-            } catch (error) {
-                console.error('Error loading users:', error);
+                    });
+                } catch (error) {
+                    console.error('Error loading users:', error);
+                }
             }
-        }
 
-        // Update showResetForm to display user info
-        function showResetForm(userId, username) {
-            document.getElementById('selectedUserId').value = userId;
-            document.getElementById('selectedUserInfo').textContent = `${username} (ID: ${userId})`;
-            document.getElementById('resetForm').style.display = 'block';
-        }
+            // Update showResetForm to display user info
+            function showResetForm(userId, username) {
+                document.getElementById('selectedUserId').value = userId;
+                document.getElementById('selectedUserInfo').textContent = `${username} (ID: ${userId})`;
+                document.getElementById('resetForm').style.display = 'block';
+            }
 
-        // Update cancelReset to clear user info
-        function cancelReset() {
-            document.getElementById('resetForm').style.display = 'none';
-            document.getElementById('newPassword').value = '';
-            document.getElementById('selectedUserInfo').textContent = 'None';
-        }
+            // Update cancelReset to clear user info
+            function cancelReset() {
+                document.getElementById('resetForm').style.display = 'none';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('selectedUserInfo').textContent = 'None';
+            }
 
-        async function resetPassword() {
-            const userId = document.getElementById('selectedUserId').value;
-            const newPassword = document.getElementById('newPassword').value;
+            async function resetPassword() {
+                const userId = document.getElementById('selectedUserId').value;
+                const newPassword = document.getElementById('newPassword').value;
 
-            try {
-                const response = await fetch(`/api/admin/reset-password/${userId}`, {
-                    method: 'PUT',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ new_password: newPassword })
-                });
+                try {
+                    const response = await fetch(`/api/admin/reset-password/${userId}`, {
+                        method: 'PUT',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ new_password: newPassword })
+                    });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    alert('Password reset successful');
+                    cancelReset();
+                } catch (error) {
+                    console.error('Error resetting password:', error);
+                    alert('Failed to reset password');
+                }
+            }
+
+
+            function showMessage(message, isError = false) {
+                const messageDiv = document.getElementById('message');
+                messageDiv.textContent = message;
+                messageDiv.className = `message ${isError ? 'error' : 'success'}`;
+                messageDiv.style.display = 'block';
+            }
+
+            document.getElementById('changePasswordForm').addEventListener('submit', async function (e) {
+                e.preventDefault();
+
+                const oldPassword = document.getElementById('oldPassword').value;
+                const newPassword = document.getElementById('newPassword').value;
+                const confirmPassword = document.getElementById('confirmPassword').value;
+
+                if (newPassword !== confirmPassword) {
+                    showMessage('New passwords do not match', true);
+                    return;
                 }
 
-                alert('Password reset successful');
-                cancelReset();
-            } catch (error) {
-                console.error('Error resetting password:', error);
-                alert('Failed to reset password');
-            }
-        }
+                try {
+                    const response = await fetch('/api/change-password', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({
+                            old_password: oldPassword,
+                            new_password: newPassword
+                        })
+                    });
 
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to change password');
+                    }
 
-        function showMessage(message, isError = false) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = message;
-            messageDiv.className = `message ${isError ? 'error' : 'success'}`;
-            messageDiv.style.display = 'block';
-        }
-
-        document.getElementById('changePasswordForm').addEventListener('submit', async function (e) {
-            e.preventDefault();
-
-            const oldPassword = document.getElementById('oldPassword').value;
-            const newPassword = document.getElementById('newPassword').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
-
-            if (newPassword !== confirmPassword) {
-                showMessage('New passwords do not match', true);
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/change-password', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({
-                        old_password: oldPassword,
-                        new_password: newPassword
-                    })
-                });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Failed to change password');
+                    showMessage('Password changed successfully');
+                    document.getElementById('changePasswordForm').reset();
+                } catch (error) {
+                    showMessage(error.message, true);
                 }
+            });
 
-                showMessage('Password changed successfully');
-                document.getElementById('changePasswordForm').reset();
-            } catch (error) {
-                showMessage(error.message, true);
-            }
-        });
+            //token management
+            function addTokenPair() {
+                const container = document.getElementById('token-container');
+                const pairDiv = document.createElement('div');
+                pairDiv.className = 'token-pair config-group';
 
-        //token management
-        function addTokenPair() {
-            const container = document.getElementById('token-container');
-            const pairDiv = document.createElement('div');
-            pairDiv.className = 'token-pair config-group';
-
-            pairDiv.innerHTML = `
+                pairDiv.innerHTML = `
                     <div class="token-inputs">
                         <input type="text" placeholder="Name" class="token-name">
                         <input type="password" placeholder="Token" class="token-value">
@@ -910,22 +920,22 @@
                     </div>
                 `;
 
-            container.appendChild(pairDiv);
-        }
-
-
-        window.onload = function () {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                window.location.href = '/login.html';
-                return;
+                container.appendChild(pairDiv);
             }
-            loadSettings();
-            loadUsers();
-            loadAuditLogs();
-            setInterval(loadAuditLogs, 30000); // Refresh every 30 seconds
-        }
-    </script>
+
+
+            window.onload = function () {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+                loadSettings();
+                loadUsers();
+                loadAuditLogs();
+                setInterval(loadAuditLogs, 30000); // Refresh every 30 seconds
+            }
+        </script>
 </body>
 
 </html>

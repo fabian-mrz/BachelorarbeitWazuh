@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title>Setup Instructions</title>
+</head>
+<body>
+    <div class="container">
+        <h1>Setup Instructions for Wazuh</h1>
+        <ol>
+            <li>
+                <h2>Step 1: Configure Certificates</h2>
+                <p>Generate and configure SSL certificates for the Wazuh Dashboard and service.</p>
+                <pre>
+                    <code>
+                        # Follow the official documentation to generate and configure SSL certificates
+                        https://documentation.wazuh.com/current/user-manual/wazuh-server-cluster.html#certificates-deployment
+                    </code>
+                </pre>
+            </li>
+            <li>
+                <h2>Step 2: Randomize JWT</h2>
+                <p>Update the JWT settings in the configuration file to enhance security.</p>
+                <pre>
+                    <code>
+                        # Edit the config.json file to randomize JWT
+                        vi config/config.json
+                    </code>
+                </pre>
+            </li>
+            <li>
+                <h2>Step 3: Change API Tokens</h2>
+                <p>Update the API tokens in the configuration file.</p>
+                <pre>
+                    <code>
+                        # Modify the API tokens in config/config.json
+                        vi config/config.json
+                    </code>
+                </pre>
+            </li>
+            <li>
+                <h2>Step 4: Configure SIP/Email/Telegram Tokens</h2>
+                <p>Set up the necessary tokens for SIP, Email, and Telegram notifications.</p>
+                <pre>
+                    <code>
+                        # Update the tokens in the config.json file
+                    </code>
+                </pre>
+            </li>
+            <li>
+                <h2>Step 5: Change Wazuh Server Admin Password</h2>
+                <p>Change the admin password for the Wazuh server.</p>
+                <pre>
+                    <code>
+                        # Use the following command to change the admin password
+                        ./scripts/wazuh_setup.sh change-admin-password
+                    </code>
+                </pre>
+            </li>
+            <li>
+                <h2>Step 6: Change All Wazuh Passwords</h2>
+                <p>Run the script to change all Wazuh passwords.</p>
+                <pre>
+                    <code>
+                        # Execute the script to update all passwords according to the official documentation
+                        https://documentation.wazuh.com/current/user-manual/user-administration/password-management.html
+                    </code>
+                </pre>
+            </li>
+            <li>
+                <h2>Step 7: Create Your Own Account</h2>
+                <p>After completing the setup, create your own user account.</p>
+                <pre>
+                    <code>
+                        # Use the following command to create a new user
+                    
+                    </code>
+                </pre>
+            </li>
+            <li>
+                <h2>Step 8: Delete the Default Admin Account</h2>
+                <p>Finally, delete the default admin account.</p>
+                <pre>
+                    <code>
+                        # Run the command to delete the default admin account
+                        ./scripts/wazuh_setup.sh delete-user wazuhadmin@tes-t1234.de
+                    </code>
+                </pre>
+            </li>
+        </ol>
+    </div>
+</body>
+</html>
