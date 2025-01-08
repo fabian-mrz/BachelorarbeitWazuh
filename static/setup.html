@@ -77,368 +77,456 @@
             background: #f44336;
             margin-left: 10px;
         }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+        }
+
+        input:checked+.slider {
+            background-color: #4CAF50;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(26px);
+        }
+
+        .slider.round {
+            border-radius: 34px;
+        }
+
+        .slider.round:before {
+            border-radius: 50%;
+        }
     </style>
 </head>
 
-<body>
-    <div class="container">
-        <h1>Setup Instructions for Wazuh-Pager</h1>
-        <div class="intro-panel">
-            <h2>About Wazuh-Pager</h2>
-            <p>Wazuh-Pager is an incident management and notification system that extends the Wazuh SIEM platform.
-                It provides automated alert handling, customizable notification workflows, and multi-channel
-                communications
-                including email, Telegram, and phone calls. This setup wizard will guide you through:</p>
-            <ul>
-                <li>SSL Certificate configuration for secure communications</li>
-                <li>System authentication and API token setup</li>
-                <li>Notification service configuration (Telegram, Email, SIP)</li>
-                <li>Administrator account creation</li>
-            </ul>
-            <p>Please complete all steps in order to ensure proper system functionality.</p>
-        </div>
-        <div class="container">
-            <h1>Setup Instructions for Wazuh-Pager</h1>
-            <li>
-                <h2>Step 1: Configure Certificates</h2>
-                <p>Generate and configure SSL certificates for this service.</p>
-                <div class="config-section">
-                    <h3>Certificate Management</h3>
-                    <div class="info-panel">
-                        <h4>Certificate Configuration Steps:</h4>
-                        <ol>
-                            <li>Fill out all required fields:
-                                <ul>
-                                    <li>Country: Two letter code (e.g., DE for Germany)</li>
-                                    <li>State/Province: Your state (e.g., Baden-Württemberg)</li>
-                                    <li>City: Your city location</li>
-                                    <li>Organization: Your company name</li>
-                                    <li>Common Name: Must match your server hostname (default: wazuhserver)</li>
-                                    <li>Email: Valid contact email</li>
-                                </ul>
-                            </li>
-                            <li>Generate the certificate using provided fields</li>
-                            <li>Download and install the generated certificate</li>
-                            <li>Client System Configuration:
-                                <ul>
-                                    <li>Windows: Import to "Trusted Root Certification Authorities"</li>
-                                    <li>macOS: Add to Keychain and trust</li>
-                                    <li>Linux: Add to /usr/local/share/ca-certificates/ and run sudo
-                                        update-ca-certificates</li>
-                                </ul>
-                            </li>
-                            <li>Restart the server:
-                                <pre>sudo systemctl restart wazuh-web wazuh-aggregator</pre>
-                            </li>
-                        </ol>
-                    </div>
-                    <div class="config-group">
-                        <label>Country (2 letters):</label>
-                        <input type="text" id="cert_country" maxlength="2" pattern="[A-Za-z]{2}">
-                    </div>
-                    <div class="config-group">
-                        <label>State/Province:</label>
-                        <input type="text" id="cert_state">
-                    </div>
-                    <div class="config-group">
-                        <label>City:</label>
-                        <input type="text" id="cert_city">
-                    </div>
-                    <div class="config-group">
-                        <label>Organization:</label>
-                        <input type="text" id="cert_organization">
-                    </div>
-                    <div class="config-group">
-                        <label>Common Name:</label>
-                        <input type="text" id="cert_common_name">
-                    </div>
-                    <div class="config-group">
-                        <label>Email:</label>
-                        <input type="email" id="cert_email">
-                    </div>
-                    <div class="button-group">
-                        <button class="edit-btn" id="generate_cert">Generate Certificate</button>
-                        <button class="save-btn" id="download_cert">Download Certificate</button>
-                    </div>
-                    <div id="cert_status" class="status-message"></div>
-                    <p>Please also change the certificates for the wazuh dashobard according to the <a
-                            href="https://documentation.wazuh.com/current/user-manual/wazuh-server-cluster.html#certificates-deployment">official
-                            documentation</a></p>
+<body></body>
+<div class="container">
+    <div class="intro-panel"></div>
+    <h2>About Wazuh-Pager</h2>
+    <p>Wazuh-Pager is an incident management and notification system that extends the Wazuh SIEM platform.
+        It provides automated alert handling, customizable notification workflows, and multi-channel
+        communications
+        including email, Telegram, and phone calls. This setup wizard will guide you through:</p>
+    <ul>
+        <li>SSL Certificate configuration for secure communications</li>
+        <li>System authentication and API token setup</li>
+        <li>Notification service configuration (Telegram, Email, SIP)</li>
+        <li>Administrator account creation</li>
+    </ul>
+    <p>Please complete all steps in order to ensure proper system functionality.</p>
+</div>
+<div class="container">
+    <h1>Setup Instructions for Wazuh-Pager</h1>
+    <ol class="setup-steps">
+        <li>
+            <h2>Configure Certificates</h2>
+            <p>Generate and configure SSL certificates for this service.</p>
+            <div class="config-section">
+                <h3>Certificate Management</h3>
+                <div class="info-panel">
+                    <h4>Certificate Configuration Steps:</h4>
+                    <ol>
+                        <li>Fill out all required fields:
+                            <ul>
+                                <li>Country: Two letter code (e.g., DE for Germany)</li>
+                                <li>State/Province: Your state (e.g., Baden-Württemberg)</li>
+                                <li>City: Your city location</li>
+                                <li>Organization: Your company name</li>
+                                <li>Common Name: Must match your server hostname (default: wazuhserver)</li>
+                                <li>Email: Valid contact email</li>
+                            </ul>
+                        </li>
+                        <li>Generate the certificate using provided fields</li>
+                        <li>Download and install the generated certificate</li>
+                        <li>Client System Configuration:
+                            <ul>
+                                <li>Windows: Import to "Trusted Root Certification Authorities"</li>
+                                <li>macOS: Add to Keychain and trust</li>
+                                <li>Linux: Add to /usr/local/share/ca-certificates/ and run sudo
+                                    update-ca-certificates</li>
+                            </ul>
+                        </li>
+                        <li>Restart the server:
+                            <pre>sudo systemctl restart wazuh-web wazuh-aggregator</pre>
+                        </li>
+                    </ol>
                 </div>
-            <li>
-                <h2>Step 2: System Configuration</h2>
-                <p>Configure authentication, API tokens, and notification services.</p>
-                <div class="config-section">
-                    <h3>JWT Configuration</h3>
-                    <div class="config-group">
-                        <label>Secret Key:</label>
-                        <input type="password" id="auth_secret_key">
-                    </div>
-
-                    <h3>API Tokens</h3>
-                    <div id="token-container">
-                        <!-- Token pairs will be added here dynamically -->
-                    </div>
-                    <div class="config-group token-controls">
-                        <p><strong>Please do not remove default token. It is used by the wazuh aggregation
-                                script.</strong></p>
-                        <button type="button" class="save-btn" onclick="addTokenPair()">Add Token</button>
-                    </div>
-
-                    <h3>Telegram Settings</h3>
-                    <div class="config-group">
-                        <label>Chat ID:</label>
-                        <input type="text" id="telegram_chat_id">
-                    </div>
-                    <div class="config-group">
-                        <label>Bot Token:</label>
-                        <input type="password" id="telegram_bot_token">
-                    </div>
-                    <div class="config-group">
-                        <label>Enabled:</label>
-                        <label class="switch">
-                            <input type="checkbox" id="telegram_enabled">
-                            <span class="slider round"></span>
-                        </label>
-                    </div>
-
-                    <h3>SMTP Settings</h3>
-                    <div class="config-group">
-                        <label>Server:</label>
-                        <input type="text" id="smtp_server">
-                    </div>
-                    <div class="config-group">
-                        <label>Port:</label>
-                        <input type="number" id="smtp_port">
-                    </div>
-                    <div class="config-group">
-                        <label>Username:</label>
-                        <input type="text" id="smtp_username">
-                    </div>
-                    <div class="config-group">
-                        <label>Password:</label>
-                        <input type="password" id="smtp_password">
-                    </div>
-                    <div class="config-group">
-                        <label>From:</label>
-                        <input type="email" id="smtp_from">
-                    </div>
-                    <div class="config-group">
-                        <label>Enabled:</label>
-                        <label class="switch">
-                            <input type="checkbox" id="smtp_enabled">
-                            <span class="slider round"></span>
-                        </label>
-                    </div>
-
-                    <h3>SIP Settings</h3>
-                    <div class="config-group">
-                        <label>Username:</label>
-                        <input type="text" id="sip_username">
-                    </div>
-                    <div class="config-group">
-                        <label>Password:</label>
-                        <input type="password" id="sip_password">
-                    </div>
-                    <div class="config-group">
-                        <label>Host:</label>
-                        <input type="text" id="sip_host">
-                    </div>
-                    <div class="config-group">
-                        <label>Enabled:</label>
-                        <label class="switch">
-                            <input type="checkbox" id="sip_enabled">
-                            <span class="slider round"></span>
-                        </label>
-                    </div>
-
-                    <div class="config-group">
-                        <button onclick="saveSettings()" class="btn save-btn">Save All Settings</button>
-                    </div>
-                    <div id="settings_status" class="status-message"></div>
+                <div class="config-group">
+                    <label>Country (2 letters):</label>
+                    <input type="text" id="cert_country" maxlength="2" pattern="[A-Za-z]{2}">
                 </div>
-            </li>
-            <li>
-                <h2>Step 5: Change Linux System Password</h2>
-                <p>Change the default system password for security.</p>
-                <div class="config-section">
-                    <div class="info-panel">
-                        <h4>System Password Change Instructions:</h4>
-                        <ol>
-                            <li>Connect to your Wazuh server via SSH:
-                                <pre
-                                    class="command-block">ssh wazuh-admin@<span class="placeholder">your-server-ip</span></pre>
-                            </li>
-                            <li>Open terminal and enter the password change command:
-                                <pre class="command-block">passwd</pre>
-                            </li>
-                            <li>Enter your current password when prompted</li>
-                            <li>Enter and confirm your new password</li>
-                        </ol>
-                    </div>
+                <div class="config-group">
+                    <label>State/Province:</label>
+                    <input type="text" id="cert_state">
                 </div>
-            </li>
-            <li>
-                <h2>Step 7: Create Your Own Account</h2>
-                <p>After completing the setup, create your own administrator account for the web interface.</p>
-                <div class="config-section">
-                    <div class="info-panel">
-                        <h3>Create Admin Account</h3>
-                        <p>Create your administrator account with the following details:</p>
-                        <form id="contactForm" onsubmit="event.preventDefault(); saveContact();">
-                            <div class="config-group">
-                                <label for="name">Name:</label>
-                                <input type="text" id="name" required>
-                            </div>
-                            <div class="config-group">
-                                <label for="email">Email:</label>
-                                <input type="email" id="email" required>
-                            </div>
-                            <div class="config-group">
-                                <label for="phone">Phone:</label>
-                                <input type="tel" id="phone" required>
-                            </div>
-                            <div class="config-group">
-                                <label for="department">Department:</label>
-                                <input type="text" id="department" required>
-                            </div>
-                            <div class="warning-note">
-                                <strong>Note:</strong> This account will be created with administrative privileges.
-                            </div>
-                            <button type="submit" class="save-btn">Create Admin Account</button>
-                        </form>
-                        <div id="admin_status" class="status-message"></div>
-                    </div>
+                <div class="config-group">
+                    <label>City:</label>
+                    <input type="text" id="cert_city">
                 </div>
-            </li>
-            <li>
-                <h2>Step 8: Finish Setup</h2>
-                <p>Please ensure all steps have been done and finally delete the setup user down below</p>
-                <div class="config-section">
-                    <table class="contact-table">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Email</th>
-                                <th>Phone</th>
-                                <th>Department</th>
-                                <th>Role</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="contactsTableBody">
-                        </tbody>
-                    </table>
+                <div class="config-group">
+                    <label>Organization:</label>
+                    <input type="text" id="cert_organization">
+                </div>
+                <div class="config-group">
+                    <label>Common Name:</label>
+                    <input type="text" id="cert_common_name">
+                </div>
+                <div class="config-group">
+                    <label>Email:</label>
+                    <input type="email" id="cert_email">
+                </div>
+                <div class="button-group">
+                    <button class="edit-btn" id="generate_cert">Generate Certificate</button>
+                    <button class="save-btn" id="download_cert">Download Certificate</button>
+                </div>
+                <div id="cert_status" class="status-message"></div>
+                <p>Please also change the certificates for the wazuh dashobard according to the <a
+                        href="https://documentation.wazuh.com/current/user-manual/wazuh-server-cluster.html#certificates-deployment">official
+                        documentation</a></p>
+            </div>
+        </li>
+        <li>
+            <h2>System Configuration</h2>
+            <p>Configure authentication, API tokens, and notification services.</p>
+            <div class="config-section">
+
+                <h5>API Tokens(Optional)</h5>
+                <ul>
+                    <li>The default token is required for the Wazuh aggregation script</li>
+                    <li>Additional tokens can be created for third-party integrations</li>
+                    <li>Each token provides secure access to create incidents via API</li>
+                </ul>
+
+                <h5>Example API Usage</h5>
+                <pre class="command-block">
+                import requests
+                
+                test_incident = {
+                    "title": "Test Incident",
+                    "description": "Description of the incident",
+                    "severity": "high"
+                }
+                
+                response = requests.post(
+                    'https://wazuhserver:8334/incidents/',
+                    json=test_incident,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-API-Key': "YOUR_TOKEN_HERE"
+                    },
+                    verify=False  # Only if using self-signed certificates
+                )</pre>
+
+                <h3>API Tokens</h3>
+                <div id="token-container">
+                    <!-- Token pairs will be added here dynamically -->
+                </div>
+                <p><strong>Please do not remove default token. It is used by the wazuh aggregation
+                        script.</strong></p>
+
+                <h3>JWT Configuration</h3>
+                <p><strong>Please change this token as it is required for genrating session tokens.</strong></p>
+                <div class="config-group">
+                    <label>Secret Key:</label>
+                    <input type="password" id="auth_secret_key">
+                </div>
 
 
-            </li>
-        </div>
+                <div class="config-group token-controls">
+                    <button type="button" class="save-btn" onclick="addTokenPair()">Add Token</button>
+                </div>
 
-        <script>
-            function getAuthHeaders() {
-                const token = localStorage.getItem('token');
-                if (!token) {
+                <h3>Telegram Settings</h3>
+                <div class="config-group">
+                    <label>Chat ID:</label>
+                    <input type="text" id="telegram_chat_id">
+                </div>
+                <div class="config-group">
+                    <label>Bot Token:</label>
+                    <input type="password" id="telegram_bot_token">
+                </div>
+                <div class="config-group">
+                    <label>Enabled:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="telegram_enabled">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <h3>SMTP Settings</h3>
+                <div class="config-group">
+                    <label>Server:</label>
+                    <input type="text" id="smtp_server">
+                </div>
+                <div class="config-group">
+                    <label>Port:</label>
+                    <input type="number" id="smtp_port">
+                </div>
+                <div class="config-group">
+                    <label>Username:</label>
+                    <input type="text" id="smtp_username">
+                </div>
+                <div class="config-group">
+                    <label>Password:</label>
+                    <input type="password" id="smtp_password">
+                </div>
+                <div class="config-group">
+                    <label>From:</label>
+                    <input type="email" id="smtp_from">
+                </div>
+                <div class="config-group">
+                    <label>Enabled:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="smtp_enabled">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <h3>SIP Settings</h3>
+                <div class="config-group">
+                    <label>Username:</label>
+                    <input type="text" id="sip_username">
+                </div>
+                <div class="config-group">
+                    <label>Password:</label>
+                    <input type="password" id="sip_password">
+                </div>
+                <div class="config-group">
+                    <label>Host:</label>
+                    <input type="text" id="sip_host">
+                </div>
+                <div class="config-group">
+                    <label>Enabled:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="sip_enabled">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="config-group">
+                    <button onclick="saveSettings()" class="btn save-btn">Save All Settings</button>
+                </div>
+                <div id="settings_status" class="status-message"></div>
+            </div>
+        </li>
+        <li>
+            <h2>Change Linux System Password</h2>
+            <p>Change the default system password for security.</p>
+            <div class="config-section">
+                <div class="info-panel">
+                    <h4>System Password Change Instructions:</h4>
+                    <ol>
+                        <li>Connect to your Wazuh server via SSH:
+                            <pre
+                                class="command-block">ssh wazuh-admin@<span class="placeholder">your-server-ip</span></pre>
+                        </li>
+                        <li>Open terminal and enter the password change command:
+                            <pre class="command-block">passwd</pre>
+                        </li>
+                        <li>Enter your current password when prompted</li>
+                        <li>Enter and confirm your new password</li>
+                    </ol>
+                </div>
+            </div>
+        </li>
+
+        <li>
+            <h2>Create Your Own Account</h2>
+            <p>After completing the setup, create your own administrator account for the web interface.</p>
+            <div class="config-section">
+                <div class="info-panel">
+                    <h3>Create Admin Account</h3>
+                    <p>Create your administrator account with the following details:</p>
+                    <form id="contactForm" onsubmit="event.preventDefault(); saveContact();">
+                        <div class="config-group">
+                            <label for="name">Name:</label>
+                            <input type="text" id="name" required>
+                        </div>
+                        <div class="config-group">
+                            <label for="email">Email:</label>
+                            <input type="email" id="email" required>
+                        </div>
+                        <div class="config-group">
+                            <label for="phone">Phone:</label>
+                            <input type="tel" id="phone" required>
+                        </div>
+                        <div class="config-group">
+                            <label for="department">Department:</label>
+                            <input type="text" id="department" required>
+                        </div>
+                        <div class="warning-note">
+                            <strong>Note:</strong> This account will be created with administrative privileges.
+                        </div>
+                        <button type="submit" class="save-btn">Create Admin Account</button>
+                    </form>
+                    <div id="admin_status" class="status-message"></div>
+                </div>
+            </div>
+        </li>
+        <li>
+            <h2>Finish Setup</h2>
+            <p>Please ensure all steps have been done and finally delete the setup user down below</p>
+            <div class="config-section">
+                <table class="contact-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Department</th>
+                            <th>Role</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="contactsTableBody">
+                    </tbody>
+                </table>
+
+
+        </li>
+    </ol>
+</div>
+
+
+
+
+<script>
+    function getAuthHeaders() {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login.html';
+            return;
+        }
+        return {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        };
+    }
+
+    //contacts
+    async function deleteContact(id) {
+        if (confirm('Setup completed! After deleting the setup user, you will be redirected to login.')) {
+            try {
+                const response = await fetch(`/api/contacts/${id}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                localStorage.removeItem('token');
+                window.location.href = '/login.html';
+
+            } catch (error) {
+                console.error('Error completing setup:', error);
+                alert('Error completing setup');
+            }
+        }
+    }
+    async function saveContact() {
+        const form = document.getElementById('contactForm');
+        const statusDiv = document.getElementById('admin_status');
+
+        const newContact = {
+            name: document.getElementById('name').value,
+            email: document.getElementById('email').value,
+            phone: document.getElementById('phone').value,
+            department: document.getElementById('department').value,
+            role: 'admin' // Always set as admin
+        };
+
+        try {
+            const response = await fetch('/api/contacts', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(newContact)
+            });
+
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
                     window.location.href = '/login.html';
                     return;
                 }
-                return {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                };
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            //contacts
-            async function deleteContact(id) {
-                if (confirm('Setup completed! After deleting the setup user, you will be redirected to login.')) {
-                    try {
-                        const response = await fetch(`/api/contacts/${id}`, {
-                            method: 'DELETE',
-                            headers: getAuthHeaders()
-                        });
+            const data = await response.json();
+            form.reset();
 
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-
-                        localStorage.removeItem('token');
-                        window.location.href = '/login.html';
-
-                    } catch (error) {
-                        console.error('Error completing setup:', error);
-                        alert('Error completing setup');
-                    }
-                }
-            }
-            async function saveContact() {
-                const form = document.getElementById('contactForm');
-                const statusDiv = document.getElementById('admin_status');
-
-                const newContact = {
-                    name: document.getElementById('name').value,
-                    email: document.getElementById('email').value,
-                    phone: document.getElementById('phone').value,
-                    department: document.getElementById('department').value,
-                    role: 'admin' // Always set as admin
-                };
-
-                try {
-                    const response = await fetch('/api/contacts', {
-                        method: 'POST',
-                        headers: getAuthHeaders(),
-                        body: JSON.stringify(newContact)
-                    });
-
-                    if (!response.ok) {
-                        if (response.status === 401 || response.status === 403) {
-                            window.location.href = '/login.html';
-                            return;
-                        }
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    form.reset();
-
-                    statusDiv.innerHTML = `
+            statusDiv.innerHTML = `
             <strong>Account created successfully!</strong><br>
             Temporary Password: <code>${data.password}</code><br>
             <div class="warning-note">
                 Please save this password change it upon first login! You can login with your email address.
             </div>
         `;
-                    statusDiv.className = 'status-message success';
-                } catch (error) {
-                    console.error('Error creating admin account:', error);
-                    statusDiv.textContent = `Error creating admin account: ${error.message}`;
-                    statusDiv.className = 'status-message error';
+            statusDiv.className = 'status-message success';
+        } catch (error) {
+            console.error('Error creating admin account:', error);
+            statusDiv.textContent = `Error creating admin account: ${error.message}`;
+            statusDiv.className = 'status-message error';
+        }
+    }
+
+    async function loadContacts() {
+        try {
+            const response = await fetch('/api/contacts', {
+                headers: getAuthHeaders()
+            });
+
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    window.location.href = '/login.html';
+                    return;
                 }
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            async function loadContacts() {
-                try {
-                    const response = await fetch('/api/contacts', {
-                        headers: getAuthHeaders()
-                    });
+            const data = await response.json();
+            contacts = data.contacts;
+            renderContacts();
+        } catch (error) {
+            console.error('Error loading contacts:', error);
+        }
+    }
 
-                    if (!response.ok) {
-                        if (response.status === 401 || response.status === 403) {
-                            window.location.href = '/login.html';
-                            return;
-                        }
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    contacts = data.contacts;
-                    renderContacts();
-                } catch (error) {
-                    console.error('Error loading contacts:', error);
-                }
-            }
-
-            function renderContacts() {
-                const tbody = document.getElementById('contactsTableBody');
-                tbody.innerHTML = Object.entries(contacts).map(([id, contact]) => `
+    function renderContacts() {
+        const tbody = document.getElementById('contactsTableBody');
+        tbody.innerHTML = Object.entries(contacts).map(([id, contact]) => `
                     <tr>
                         <td>${contact.name}</td>
                         <td>${contact.email}</td>
@@ -450,260 +538,260 @@
                         </td>
                     </tr>
                 `).join('');
+    }
+
+    //settings
+    async function loadSettings() {
+        try {
+            const response = await fetch('/settings', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    return;
+                }
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+            // make config-section visible
+            document.querySelectorAll('.config-section').forEach(section => {
+                section.style.display = 'block';
+            });
+            const settings = await response.json();
 
-            //settings
-            async function loadSettings() {
-                try {
-                    const response = await fetch('/settings', {
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        }
-                    });
-                    if (!response.ok) {
-                        if (response.status === 401 || response.status === 403) {
-                            return;
-                        }
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    // make config-section visible
-                    document.querySelectorAll('.config-section').forEach(section => {
-                        section.style.display = 'block';
-                    });
-                    const settings = await response.json();
+            // Log raw settings
+            console.log('Raw settings:', settings);
 
-                    // Log raw settings
-                    console.log('Raw settings:', settings);
+            // Load API Tokens
+            const tokenContainer = document.getElementById('token-container');
+            tokenContainer.innerHTML = ''; // Clear existing tokens
 
-                    // Load API Tokens
-                    const tokenContainer = document.getElementById('token-container');
-                    tokenContainer.innerHTML = ''; // Clear existing tokens
-
-                    if (settings.api && settings.api.tokens) {
-                        Object.entries(settings.api.tokens).forEach(([name, token]) => {
-                            const pairDiv = document.createElement('div');
-                            pairDiv.className = 'token-pair config-group';
-                            pairDiv.innerHTML = `
+            if (settings.api && settings.api.tokens) {
+                Object.entries(settings.api.tokens).forEach(([name, token]) => {
+                    const pairDiv = document.createElement('div');
+                    pairDiv.className = 'token-pair config-group';
+                    pairDiv.innerHTML = `
                     <div class="token-inputs">
                         <input type="text" class="token-name" value="${name}" readonly>
                         <input type="password" class="token-value" value="${token}">
                         <button type="button" class="delete-btn" onclick="this.parentElement.parentElement.remove()">Remove</button>
                     </div>
                 `;
-                            tokenContainer.appendChild(pairDiv);
-                        });
-                    }
-
-                    // Set default values if settings sections are undefined
-                    const telegram = {
-                        ...settings.telegram,
-                        enabled: settings.telegram?.enabled === 'True'
-                    };
-
-                    const smtp = {
-                        ...settings.smtp,
-                        enabled: settings.smtp?.enabled === 'True'
-                    };
-
-                    const sip = {
-                        ...settings.sip,
-                        enabled: settings.sip?.enabled === 'True'
-                    };
-
-                    // Log enabled states
-                    console.log('Telegram enabled:', telegram.enabled);
-                    console.log('SMTP enabled:', smtp.enabled);
-                    console.log('SIP enabled:', sip.enabled);
-
-                    // Telegram settings with explicit false fallback
-                    document.getElementById('telegram_enabled').checked = telegram.enabled === true;
-                    document.getElementById('telegram_chat_id').value = telegram.CHAT_ID || '';
-                    document.getElementById('telegram_bot_token').value = telegram.BOT_TOKEN || '';
-
-                    // SMTP settings with explicit false fallback
-                    document.getElementById('smtp_enabled').checked = smtp.enabled === true;
-                    document.getElementById('smtp_server').value = smtp.server || '';
-                    document.getElementById('smtp_port').value = smtp.port || '';
-                    document.getElementById('smtp_username').value = smtp.username || '';
-                    document.getElementById('smtp_password').value = smtp.password || '';
-                    document.getElementById('smtp_from').value = smtp.from || '';
-
-                    // SIP settings with explicit false fallback
-                    document.getElementById('sip_enabled').checked = sip.enabled === true;
-                    document.getElementById('sip_username').value = sip.username || '';
-                    document.getElementById('sip_password').value = sip.password || '';
-                    document.getElementById('sip_host').value = sip.host || '';
-
-                    // Auth settings
-                    document.getElementById('auth_secret_key').value = settings.auth?.secret_key || '';
-
-                } catch (error) {
-                    console.error('Error loading settings:', error);
-                }
-            }
-
-            async function saveSettings() {
-                // Collect token pairs
-                const tokenPairs = document.querySelectorAll('.token-pair');
-                const tokens = {};
-                tokenPairs.forEach(pair => {
-                    const name = pair.querySelector('.token-name').value;
-                    const token = pair.querySelector('.token-value').value;
-                    if (name && token) {
-                        tokens[name] = token;
-                    }
+                    tokenContainer.appendChild(pairDiv);
                 });
-
-                const settings = {
-                    telegram: {
-                        enabled: document.getElementById('telegram_enabled').checked,
-                        CHAT_ID: document.getElementById('telegram_chat_id').value,
-                        BOT_TOKEN: document.getElementById('telegram_bot_token').value
-                    },
-                    smtp: {
-                        enabled: document.getElementById('smtp_enabled').checked,
-                        server: document.getElementById('smtp_server').value,
-                        port: document.getElementById('smtp_port').value,
-                        username: document.getElementById('smtp_username').value,
-                        password: document.getElementById('smtp_password').value,
-                        from: document.getElementById('smtp_from').value
-                    },
-                    sip: {
-                        enabled: document.getElementById('sip_enabled').checked,
-                        username: document.getElementById('sip_username').value,
-                        password: document.getElementById('sip_password').value,
-                        host: document.getElementById('sip_host').value
-                    },
-                    api: {
-                        tokens: tokens
-                    },
-                    auth: {
-                        secret_key: document.getElementById('auth_secret_key').value
-                    }
-                };
-
-                try {
-                    const response = await fetch('/settings', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        },
-                        body: JSON.stringify(settings)
-                    });
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    alert('Settings saved successfully!');
-                } catch (error) {
-                    console.error('Error saving settings:', error);
-                    alert('Error saving settings');
-                }
             }
 
-            function addTokenPair() {
-                const container = document.getElementById('token-container');
-                const pairDiv = document.createElement('div');
-                pairDiv.className = 'token-pair config-group';
-                pairDiv.innerHTML = `
+            // Set default values if settings sections are undefined
+            const telegram = {
+                ...settings.telegram,
+                enabled: settings.telegram?.enabled === 'True'
+            };
+
+            const smtp = {
+                ...settings.smtp,
+                enabled: settings.smtp?.enabled === 'True'
+            };
+
+            const sip = {
+                ...settings.sip,
+                enabled: settings.sip?.enabled === 'True'
+            };
+
+            // Log enabled states
+            console.log('Telegram enabled:', telegram.enabled);
+            console.log('SMTP enabled:', smtp.enabled);
+            console.log('SIP enabled:', sip.enabled);
+
+            // Telegram settings with explicit false fallback
+            document.getElementById('telegram_enabled').checked = telegram.enabled === true;
+            document.getElementById('telegram_chat_id').value = telegram.CHAT_ID || '';
+            document.getElementById('telegram_bot_token').value = telegram.BOT_TOKEN || '';
+
+            // SMTP settings with explicit false fallback
+            document.getElementById('smtp_enabled').checked = smtp.enabled === true;
+            document.getElementById('smtp_server').value = smtp.server || '';
+            document.getElementById('smtp_port').value = smtp.port || '';
+            document.getElementById('smtp_username').value = smtp.username || '';
+            document.getElementById('smtp_password').value = smtp.password || '';
+            document.getElementById('smtp_from').value = smtp.from || '';
+
+            // SIP settings with explicit false fallback
+            document.getElementById('sip_enabled').checked = sip.enabled === true;
+            document.getElementById('sip_username').value = sip.username || '';
+            document.getElementById('sip_password').value = sip.password || '';
+            document.getElementById('sip_host').value = sip.host || '';
+
+            // Auth settings
+            document.getElementById('auth_secret_key').value = settings.auth?.secret_key || '';
+
+        } catch (error) {
+            console.error('Error loading settings:', error);
+        }
+    }
+
+    async function saveSettings() {
+        // Collect token pairs
+        const tokenPairs = document.querySelectorAll('.token-pair');
+        const tokens = {};
+        tokenPairs.forEach(pair => {
+            const name = pair.querySelector('.token-name').value;
+            const token = pair.querySelector('.token-value').value;
+            if (name && token) {
+                tokens[name] = token;
+            }
+        });
+
+        const settings = {
+            telegram: {
+                enabled: document.getElementById('telegram_enabled').checked,
+                CHAT_ID: document.getElementById('telegram_chat_id').value,
+                BOT_TOKEN: document.getElementById('telegram_bot_token').value
+            },
+            smtp: {
+                enabled: document.getElementById('smtp_enabled').checked,
+                server: document.getElementById('smtp_server').value,
+                port: document.getElementById('smtp_port').value,
+                username: document.getElementById('smtp_username').value,
+                password: document.getElementById('smtp_password').value,
+                from: document.getElementById('smtp_from').value
+            },
+            sip: {
+                enabled: document.getElementById('sip_enabled').checked,
+                username: document.getElementById('sip_username').value,
+                password: document.getElementById('sip_password').value,
+                host: document.getElementById('sip_host').value
+            },
+            api: {
+                tokens: tokens
+            },
+            auth: {
+                secret_key: document.getElementById('auth_secret_key').value
+            }
+        };
+
+        try {
+            const response = await fetch('/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify(settings)
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            alert('Settings saved successfully!');
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            alert('Error saving settings');
+        }
+    }
+
+    function addTokenPair() {
+        const container = document.getElementById('token-container');
+        const pairDiv = document.createElement('div');
+        pairDiv.className = 'token-pair config-group';
+        pairDiv.innerHTML = `
             <div class="token-inputs">
                 <input type="text" placeholder="Name" class="token-name">
                 <input type="password" placeholder="Token" class="token-value">
                 <button type="button" class="delete-btn" onclick="this.parentElement.parentElement.remove()">Remove</button>
             </div>
         `;
-                container.appendChild(pairDiv);
+        container.appendChild(pairDiv);
+    }
+
+    document.getElementById('generate_cert').addEventListener('click', async () => {
+        const certData = {
+            country: document.getElementById('cert_country').value,
+            state: document.getElementById('cert_state').value,
+            city: document.getElementById('cert_city').value,
+            organization: document.getElementById('cert_organization').value,
+            common_name: document.getElementById('cert_common_name').value,
+            email: document.getElementById('cert_email').value
+        };
+
+        // Validate required fields
+        for (const [key, value] of Object.entries(certData)) {
+            if (!value.trim()) {
+                const statusDiv = document.getElementById('cert_status');
+                statusDiv.textContent = `Error: ${key.replace('_', ' ')} is required`;
+                statusDiv.className = 'status-message error';
+                return;
+            }
+        }
+
+        try {
+            const response = await fetch('/api/certificate/generate', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(certData)
+            });
+
+            if (!response.ok) {
+                throw new Error(await response.text());
             }
 
-            document.getElementById('generate_cert').addEventListener('click', async () => {
-                const certData = {
-                    country: document.getElementById('cert_country').value,
-                    state: document.getElementById('cert_state').value,
-                    city: document.getElementById('cert_city').value,
-                    organization: document.getElementById('cert_organization').value,
-                    common_name: document.getElementById('cert_common_name').value,
-                    email: document.getElementById('cert_email').value
-                };
+            const statusDiv = document.getElementById('cert_status');
+            statusDiv.textContent = 'Certificate generated successfully. Please restart Server to apply changes and check hostfile';
+            statusDiv.className = 'status-message success';
+        } catch (error) {
+            const statusDiv = document.getElementById('cert_status');
+            statusDiv.textContent = `Error: ${error.message}`;
+            statusDiv.className = 'status-message error';
+        }
+    });
 
-                // Validate required fields
-                for (const [key, value] of Object.entries(certData)) {
-                    if (!value.trim()) {
-                        const statusDiv = document.getElementById('cert_status');
-                        statusDiv.textContent = `Error: ${key.replace('_', ' ')} is required`;
-                        statusDiv.className = 'status-message error';
-                        return;
-                    }
-                }
 
-                try {
-                    const response = await fetch('/api/certificate/generate', {
-                        method: 'POST',
-                        headers: getAuthHeaders(),
-                        body: JSON.stringify(certData)
-                    });
 
-                    if (!response.ok) {
-                        throw new Error(await response.text());
-                    }
-
-                    const statusDiv = document.getElementById('cert_status');
-                    statusDiv.textContent = 'Certificate generated successfully. Please restart Server to apply changes and check hostfile';
-                    statusDiv.className = 'status-message success';
-                } catch (error) {
-                    const statusDiv = document.getElementById('cert_status');
-                    statusDiv.textContent = `Error: ${error.message}`;
-                    statusDiv.className = 'status-message error';
-                }
+    document.getElementById('download_cert').addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/certificate/download/cert', {
+                method: 'GET',
+                headers: getAuthHeaders()
             });
 
-
-
-            document.getElementById('download_cert').addEventListener('click', async () => {
-                try {
-                    const response = await fetch('/api/certificate/download/cert', {
-                        method: 'GET',
-                        headers: getAuthHeaders()
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(await response.text());
-                    }
-
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'cert.pem';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-                } catch (error) {
-                    const statusDiv = document.getElementById('cert_status');
-                    statusDiv.textContent = `Error: ${error.message}`;
-                    statusDiv.className = 'status-message error';
-                }
-            });
-
-            // Input validation for country code
-            document.getElementById('cert_country').addEventListener('input', (e) => {
-                e.target.value = e.target.value.toUpperCase();
-                if (e.target.value.length > 2) {
-                    e.target.value = e.target.value.slice(0, 2);
-                }
-            });
-
-
-            window.onload = function () {
-                const token = localStorage.getItem('token');
-                if (!token) {
-                    window.location.href = '/login.html';
-                    return;
-                }
-                loadSettings();
-                loadContacts();
+            if (!response.ok) {
+                throw new Error(await response.text());
             }
-        </script>
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'cert.pem';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            const statusDiv = document.getElementById('cert_status');
+            statusDiv.textContent = `Error: ${error.message}`;
+            statusDiv.className = 'status-message error';
+        }
+    });
+
+    // Input validation for country code
+    document.getElementById('cert_country').addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase();
+        if (e.target.value.length > 2) {
+            e.target.value = e.target.value.slice(0, 2);
+        }
+    });
+
+
+    window.onload = function () {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login.html';
+            return;
+        }
+        loadSettings();
+        loadContacts();
+    }
+</script>
 </body>
 
 </html>
