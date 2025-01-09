@@ -590,9 +590,27 @@
 
             async function downloadAuditLogs() {
                 try {
-                    window.location.href = '/api/audit-logs/download';
+                    const response = await fetch('/api/audit-logs/download', {
+                        method: 'GET',
+                        headers: getAuthHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(await response.text());
+                    }
+
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'audit_logs.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
                 } catch (error) {
                     console.error('Error downloading audit logs:', error);
+                    alert('Failed to download audit logs');
                 }
             }
 
