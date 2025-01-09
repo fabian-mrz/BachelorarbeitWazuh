@@ -133,6 +133,17 @@
     </div>
 
     <script>
+        function getAuthHeaders() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+        }
         let currentTemplate = '';
         let currentFields = {};
 
@@ -232,14 +243,27 @@
             };
 
             try {
-                await fetch(`/templates/${name}`, {
+                const response = await fetch(`/templates/${name}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        ...getAuthHeaders(),
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify(jsonContent)
                 });
+
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
                 currentFields = updatedFields;
                 await loadTemplates();
             } catch (e) {
+                console.error('Error saving template:', e);
                 alert('Error saving template');
             }
         }

@@ -1267,20 +1267,28 @@ async def save_template(
         raise HTTPException(status_code=500, detail="Error saving template")
 
 @app.delete("/templates/{template_name}")
-async def delete_template(
-    template_name: str, 
-    admin_user: User = Depends(is_admin)
-):
+async def delete_template(template_name: str, admin_user: User = Depends(is_admin)):
     try:
         if template_name == "default.json":
-            raise HTTPException(status_code=403, detail="Cannot delete the default template")
-        
-        os.remove(f"{TEMPLATES_DIR}/{template_name}")
+            add_audit_log("Template", admin_user.username, "Attempted to delete default template")
+            raise HTTPException(
+                status_code=403, 
+                detail="Cannot delete default template"
+            )
+            
+        template_path = f"{TEMPLATES_DIR}/{template_name}"
+        if not os.path.exists(template_path):
+            raise HTTPException(status_code=404, detail="Template not found")
+            
+        os.remove(template_path)
         add_audit_log("Template", admin_user.username, f"Deleted template: {template_name}")
         return {"message": "Template deleted"}
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Template not found")
-    
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting template {template_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error deleting template")
 
 
 #certificates
