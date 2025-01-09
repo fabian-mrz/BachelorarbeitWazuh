@@ -137,15 +137,22 @@
         let currentFields = {};
 
         async function loadTemplates() {
-            const response = await fetch('/list_templates');
-            if (!response.ok) {
+            try {
+                const response = await fetch('/list_templates', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                if (!response.ok) {
                     if (response.status === 401 || response.status === 403) {
                         window.location.href = '/login.html';
                         return;
                     }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-            const templates = await response.json();
+                const templates = await response.json();
+
+        }
             const select = document.getElementById('templateSelect');
             select.innerHTML = '<option value="">Select Template</option>';
             templates.forEach(template => {

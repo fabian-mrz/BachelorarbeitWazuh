@@ -331,7 +331,7 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 await loadContacts();
-                alert('Contact deleted successfully!');
+                alert('Contact deleted successfully! Please review your escalations.');
             } catch (error) {
                 console.error('Error deleting contact:', error);
                 alert('Error deleting contact');

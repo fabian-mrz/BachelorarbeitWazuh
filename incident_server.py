@@ -1231,6 +1231,7 @@ async def check_admin(admin_user = Depends(is_admin)):
     return {"is_admin": True}    
 
 
+
 @app.get('/list_templates')
 async def list_templates(token = Depends(verify_token)):
     """List all available notification templates"""
