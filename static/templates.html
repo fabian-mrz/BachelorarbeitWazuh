@@ -143,6 +143,7 @@
                         'Authorization': `Bearer ${localStorage.getItem('token')}`
                     }
                 });
+
                 if (!response.ok) {
                     if (response.status === 401 || response.status === 403) {
                         window.location.href = '/login.html';
@@ -150,25 +151,48 @@
                     }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                const templates = await response.json();
 
-        }
-            const select = document.getElementById('templateSelect');
-            select.innerHTML = '<option value="">Select Template</option>';
-            templates.forEach(template => {
-                const option = document.createElement('option');
-                option.value = template;
-                option.textContent = template;
-                select.appendChild(option);
-            });
+                const templates = await response.json();
+                const select = document.getElementById('templateSelect');
+                select.innerHTML = '<option value="">Select Template</option>';
+
+                templates.forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template;
+                    option.textContent = template;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading templates:', error);
+                alert(`Failed to load templates: ${error.message}`);
+            }
         }
 
         async function loadTemplateContent(templateName) {
-            const response = await fetch(`/templates/${templateName}`);
-            const content = await response.json();
-            currentFields = content.fields;
-            document.getElementById('editor').value = content.template;
-            updatePreview();
+            try {
+                const response = await fetch(`/templates/${templateName}`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const content = await response.json();
+                currentFields = content.fields;
+                document.getElementById('editor').value = content.template;
+                updatePreview();
+            } catch (error) {
+                console.error('Error loading template content:', error);
+                alert('Failed to load template content');
+            }
         }
 
         function updatePreview() {
@@ -246,12 +270,32 @@
             if (!currentTemplate) return;
 
             if (confirm(`Delete template ${currentTemplate}?`)) {
-                await fetch(`/templates/${currentTemplate}`, { method: 'DELETE' });
-                await loadTemplates();
-                document.getElementById('editor').value = '';
-                updatePreview();
-                currentTemplate = '';
-                currentFields = {};
+                try {
+                    const response = await fetch(`/templates/${currentTemplate}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 401 || response.status === 403) {
+                            window.location.href = '/login.html';
+                            return;
+                        }
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    await loadTemplates();
+                    document.getElementById('editor').value = '';
+                    updatePreview();
+                    currentTemplate = '';
+                    currentFields = {};
+                } catch (error) {
+                    console.error('Error deleting template:', error);
+                    alert('Failed to delete template');
+                }
             }
         }
 
@@ -335,21 +379,28 @@
             window.location.href = 'login.html';
         });
 
+        function setActiveNavLink() {
+            const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+            const navLinks = document.querySelectorAll('.nav-link');
+            navLinks.forEach(link => {
+                if (link.getAttribute('href') === currentPage) {
+                    link.classList.add('active');
+                }
+            });
+        }
+
+        document.getElementById('jsonInput').addEventListener('input', parseJsonInput);
+
         window.onload = async function () {
             const token = localStorage.getItem('token');
             if (!token) {
                 window.location.href = '/login.html';
                 return;
             }
-
-            try {
-                await loadTemplates();
-            } catch (error) {
-                showError(`Failed to load data: ${error.message}`);
-            }
+            await loadTemplates();
             setActiveNavLink();
         };
-        document.getElementById('jsonInput').addEventListener('input', parseJsonInput);
+
     </script>
 </body>
 

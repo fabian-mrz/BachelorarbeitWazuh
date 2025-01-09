@@ -1268,6 +1268,9 @@ async def delete_template(
     admin_user: User = Depends(is_admin)
 ):
     try:
+        if template_name == "default.json":
+            raise HTTPException(status_code=403, detail="Cannot delete the default template")
+        
         os.remove(f"{TEMPLATES_DIR}/{template_name}")
         add_audit_log("Delete Template", admin_user.username, f"Deleted template: {template_name}")
         return {"message": "Template deleted"}
@@ -1353,6 +1356,35 @@ async def generate_certificate(cert_data: dict, admin_user: User = Depends(is_ad
         raise HTTPException(status_code=500, detail=str(e))
     
 
+@app.delete("/api/csv")
+async def delete_all_csv(admin_user: User = Depends(is_admin)):
+    """Delete all CSV files and their parent folders in incidents directory"""
+    try:
+        incidents_dir = "incidents"
+        deleted_folders = 0
+        
+        # Check if incidents directory exists
+        if not os.path.exists(incidents_dir):
+            return {"message": "No incidents directory found"}
+            
+        # List all incident folders
+        incident_folders = [f for f in os.listdir(incidents_dir) 
+                          if os.path.isdir(os.path.join(incidents_dir, f))]
+        
+        for folder in incident_folders:
+            folder_path = os.path.join(incidents_dir, folder)
+            # Remove entire folder and contents
+            shutil.rmtree(folder_path)
+            deleted_folders += 1
+            
+        add_audit_log("Delete CSV Folders", admin_user.username, 
+                     f"Deleted {deleted_folders} incident folders")
+        return {"message": f"Deleted {deleted_folders} incident folders"}
+        
+    except Exception as e:
+        logger.error(f"Error deleting CSV folders: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
     
 app.add_middleware(HTTPSRedirectMiddleware)
 

@@ -42,9 +42,11 @@
             background-color: #c82333;
         }
 
-        #deleteAllBtn {
-            margin-bottom: 20px;
-        }
+
+        #deleteAllBtn, #deleteCSVBtn {
+        margin-bottom: 20px;
+        margin-right: 10px;
+    }
     </style>
 </head>
 
@@ -64,9 +66,15 @@
 
     <div class="container">
         <h1>Archived Incidents</h1>
-        <button id="deleteAllBtn" class="danger-btn" onclick="deleteAllArchivedIncidents()">
-            Delete All Archived Incidents
-        </button>
+        <div class="button-group">
+            <button id="deleteAllBtn" class="danger-btn" onclick="deleteAllArchivedIncidents()">
+                Delete All Archived Incidents
+            </button>
+            <button id="deleteCSVBtn" class="danger-btn" onclick="deleteAllCSV()">
+                Delete All CSV Files
+            </button>
+        </div>
+
         <table id="archived-incidents">
             <tr>
                 <th>Created</th>
@@ -204,6 +212,29 @@
                 table.innerHTML = `<tr><td colspan="5">Error loading archived incidents: ${error.message}</td></tr>`;
             }
         }
+
+        async function deleteAllCSV() {
+        if (!confirm('Are you sure you want to delete all CSV files? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/csv', {
+                method: 'DELETE',
+                headers: getAuthHeaders()
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            alert(result.message);
+        } catch (error) {
+            console.error('Error deleting CSV files:', error);
+            alert('Failed to delete CSV files');
+        }
+    }
 
         document.getElementById('logoutBtn').addEventListener('click', function () {
             // Clear authentication token
