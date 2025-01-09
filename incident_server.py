@@ -9,6 +9,7 @@ from typing import List, Tuple, Union, Dict, Optional, Literal
 import json
 import configparser
 import os
+from collections import deque
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from markdown import markdown
@@ -273,7 +274,7 @@ async def send_notifications(incident_id: str, db: Session):
                     try:
                         logger.info(f"📞 Calling {contact['name']} ({contact['phone']})")
                         ack = await make_phone_call(contact, f"Security Alert. Please press 4 to acknowledge or 5 to skip. {phone_message}")
-                        if ack:
+                        if ack==True:
                             # Refresh incident from DB
                             incident = db.query(IncidentModel).filter(IncidentModel.id == incident.id).first()
                             if incident:
@@ -287,6 +288,12 @@ async def send_notifications(incident_id: str, db: Session):
                             else:
                                 logger.error(f"❌ Incident not found in DB for update")
                                 raise Exception("Incident not found")
+                        elif ack == "satisfied":
+                            add_audit_log("Incident", contact['email'], "Not Acknowledged by Phone Call. Already on Board.")
+                            continue
+                        elif ack == "queued":
+                            add_audit_log("Incident", contact['email'], "Queued for Phone Call")
+                            continue
                         else:
                             add_audit_log("Incident", contact['email'], "Escalating further. Incident Not Acknowledged by Phone Call")
                             continue
@@ -392,52 +399,85 @@ async def update_incident(incident_id: str, new_data: dict) -> None:
 # Create thread pool executor for phone call
 thread_pool = ThreadPoolExecutor(max_workers=4)
 
+# Add class variables
+call_queue = deque()  # Queue for pending calls
+active_call = False   # Flag for active call
+last_calls = {}       # Dict to track last call times per contact
+
 async def make_phone_call(contact: dict, message: str) -> bool:
     """Make phone call and return if acknowledged"""
     try:
-        logger.info(f"📞 Starting call to {contact['name']}")
-        logger.info(f"   Phone: {contact['phone']}")
-        logger.info(f"   Message length: {len(message)} chars")
+        global active_call, call_queue, last_calls
         
-        if not contact.get('phone'):
-            logger.error("❌ Invalid phone number in contact")
-            return False
+        # Check if contact was called recently
+        now = datetime.now()
+        last_call = last_calls.get(contact['phone'])
+        if last_call and (now - last_call) < timedelta(minutes=5):
+            logger.info(f"⏳ Skipping call to {contact['name']} - called within last 5 minutes")
+            return "satisfied"
             
-        logger.info(f"   SIP Server: {phone_controller.sip_server}")
-        logger.info(f"   SIP Username: {phone_controller.username}")
-        logger.info(f"   Process active: {phone_controller.process is not None}")
+        # Add to queue if call in progress
+        if active_call:
+            logger.info(f"📞 Call in progress, queuing call to {contact['name']}")
+            call_queue.append((contact, message))
+            return "queued"
+            
+        active_call = True
+        last_calls[contact['phone']] = now
         
-        # Run blocking call in thread pool
-        loop = asyncio.get_running_loop()
-        make_call_func = partial(
-            phone_controller.make_call,
-            number=contact['phone'],
-            message=message,
-            timeout=90
-        )
-        
-        # Execute call with timeout
         try:
-            dtmf, success, error = await asyncio.wait_for(
-                loop.run_in_executor(thread_pool, make_call_func),
-                timeout=LinphoneController._get_wav_duration("output.wav") * 2 + 20
+            logger.info(f"📞 Starting call to {contact['name']}")
+            logger.info(f"   Phone: {contact['phone']}")
+            logger.info(f"   Message length: {len(message)} chars")
+            
+            if not contact.get('phone'):
+                logger.error("❌ Invalid phone number in contact")
+                return False
+                
+            logger.info(f"   SIP Server: {phone_controller.sip_server}")
+            logger.info(f"   SIP Username: {phone_controller.username}")
+            logger.info(f"   Process active: {phone_controller.process is not None}")
+            
+            # Run blocking call in thread pool
+            loop = asyncio.get_running_loop()
+            make_call_func = partial(
+                phone_controller.make_call,
+                number=contact['phone'],
+                message=message,
+                timeout=90
             )
-        except asyncio.TimeoutError:
-            logger.error(f"❌ Call timed out for {contact['name']}")
-            add_audit_log("Incident","Contact did not pick up Phone Call", contact['email'])
-            return False
             
-        logger.info(f"   Call completed:")
-        logger.info(f"   - DTMF received: {dtmf}")
-        logger.info(f"   - Success: {success}")
-        logger.info(f"   - Error: {error}")
-        
-        if error:
-            logger.error(f"❌ Call failed for {contact['name']}: {error}")
-            return False
+            # Execute call with timeout
+            try:
+                dtmf, success, error = await asyncio.wait_for(
+                    loop.run_in_executor(thread_pool, make_call_func),
+                    timeout=LinphoneController._get_wav_duration("output.wav") * 2 + 20
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"❌ Call timed out for {contact['name']}")
+                add_audit_log("Incident","Contact did not pick up Phone Call", contact['email'])
+                return False
+                
+            logger.info(f"   Call completed:")
+            logger.info(f"   - DTMF received: {dtmf}")
+            logger.info(f"   - Success: {success}")
+            logger.info(f"   - Error: {error}")
             
-        return bool(success)
-        
+            if error:
+                logger.error(f"❌ Call failed for {contact['name']}: {error}")
+                return False
+                
+            return bool(success)
+            
+        except Exception as e:
+            logger.error(f"❌ Exception in make_phone_call: {e}")
+            return False
+        finally:
+            active_call = False
+            if call_queue:
+                next_contact, next_message = call_queue.popleft()
+                asyncio.create_task(make_phone_call(next_contact, next_message))
+                
     except Exception as e:
         logger.error(f"❌ Exception in make_phone_call: {e}")
         return False
