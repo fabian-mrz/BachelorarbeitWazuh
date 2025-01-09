@@ -328,6 +328,13 @@
             closeModal();
         }
 
+        document.getElementById('logoutBtn').addEventListener('click', function () {
+            // Clear authentication token
+            localStorage.removeItem('token');
+            // Redirect to login page
+            window.location.href = 'login.html';
+        });
+
         window.onload = async function () {
             const token = localStorage.getItem('token');
             if (!token) {

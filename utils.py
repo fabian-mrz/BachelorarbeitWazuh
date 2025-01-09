@@ -81,12 +81,6 @@ def init_db():
     except Exception as e:
         print(f"Error initializing database: {e}")
 
-def hash_password(password: str) -> str:
-    try:
-        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    except Exception as e:
-        print(f"Error hashing password: {e}")
-        return None
 
 async def load_escalation_config(rule_id: str = None):
     """Load escalation config for specific rule or default"""

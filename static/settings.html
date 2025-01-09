@@ -417,7 +417,7 @@
                         </div>
                         <label>New Password:</label>
                         <input type="hidden" id="selectedUserId">
-                        <input type="password" id="newPassword" placeholder="New Password">
+                        <input type="password" id="newPasswordAdmin" placeholder="New Password">
                     </div>
                     <div class="config-group">
                         <button class="save-btn" onclick="resetPassword()">Save Password</button>
@@ -842,7 +842,7 @@
 
             async function resetPassword() {
                 const userId = document.getElementById('selectedUserId').value;
-                const newPassword = document.getElementById('newPassword').value;
+                const newPassword = document.getElementById('newPasswordAdmin').value;
 
                 try {
                     const response = await fetch(`/api/admin/reset-password/${userId}`, {
@@ -932,6 +932,13 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
             }
+
+            document.getElementById('logoutBtn').addEventListener('click', function () {
+                // Clear authentication token
+                localStorage.removeItem('token');
+                // Redirect to login page
+                window.location.href = 'login.html';
+            });
 
 
             window.onload = function () {

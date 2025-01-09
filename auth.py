@@ -5,7 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import SQLAlchemyError  # Add this import
+from sqlalchemy.exc import SQLAlchemyError  #
 from passlib.context import CryptContext
 import logging
 from jwt import ExpiredSignatureError, InvalidTokenError
@@ -26,8 +26,39 @@ file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Single CryptContext instance
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12
+)
+
+class PasswordManager:
+    @staticmethod
+    def hash(password: str) -> str:
+        """Single source for password hashing"""
+        try:
+            # Ensure string input
+            if isinstance(password, bytes):
+                password = password.decode()
+            return pwd_context.hash(password)
+        except Exception as e:
+            logger.error(f"Hashing error: {str(e)}")
+            raise
+
+    @staticmethod
+    def verify(plain_password: str, hashed_password: str) -> bool:
+        """Single source for password verification"""
+        try:
+            # Ensure string inputs
+            if isinstance(plain_password, bytes):
+                plain_password = plain_password.decode()
+            if isinstance(hashed_password, bytes):
+                hashed_password = hashed_password.decode()
+            return pwd_context.verify(plain_password, hashed_password)
+        except Exception as e:
+            logger.error(f"Verification error: {str(e)}")
+            return False
 
 # JWT Configuration
 def get_secret_key():
@@ -46,12 +77,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 security = HTTPBearer()
 
 
-
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -133,7 +158,7 @@ def verify_auth(username: str, password: str):
         user = db.query(User).filter(User.username == username).first()
         if not user:
             return False
-        return verify_password(password, user.password_hash)
+        return PasswordManager.verify(password, user.password_hash)
     except Exception as e:
         logger.error(f"Error verifying authentication: {str(e)}")
         return False
@@ -151,7 +176,7 @@ def register_user(username: str, password: str, role: str = None):
         
         user = User(
             username=username,
-            password_hash=get_password_hash(password),
+            password_hash=PasswordManager.hash(password),
             role=role
         )
         db.add(user)

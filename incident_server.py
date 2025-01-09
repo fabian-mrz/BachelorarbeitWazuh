@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 import threading
 import re
-from auth import verify_auth, create_access_token, verify_token, is_admin
+from auth import verify_auth, create_access_token, verify_token, is_admin, PasswordManager
 from database import Base, get_incidents_db, get_users_db, users_engine, incidents_engine
 from models import User, IncidentModel
 import bcrypt
@@ -31,7 +31,7 @@ import secrets
 import uvicorn
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 import shutil
-from utils import add_audit_log, init_db, hash_password, load_escalation_config, load_template, process_template_fields, clean_message_for_phone, load_contacts, save_config, read_config, load_suppressions, save_suppressions, verify_api_key, generate_password, generate_openssl_config
+from utils import add_audit_log, init_db, load_escalation_config, load_template, process_template_fields, clean_message_for_phone, load_contacts, save_config, read_config, load_suppressions, save_suppressions, verify_api_key, generate_password, generate_openssl_config
 from LinphoneController import LinphoneController
 import secrets
 
@@ -231,7 +231,6 @@ async def send_notifications(incident_id: str, db: Session):
         # Immediate notifications email
         for email in escalation['phases'][0]['contacts']:
             contact = next((c for c in contacts.values() if c['email'] == email), None)
-            print(contact)
             if not contact:
                 logger.error(f"Contact not found for email: {email}")
                 continue
@@ -531,7 +530,7 @@ async def acknowledge_incident(
             f"Incident ID: {incident_id}"
         )
         
-        print(f"✅ Incident {incident_id} acknowledged by {incident.acknowledged_by}")
+        logger.info(f"✅ Incident {incident_id} acknowledged by {incident.acknowledged_by}")
         
         return {
             "message": f"Incident acknowledged by {incident.acknowledged_by}"
@@ -541,7 +540,7 @@ async def acknowledge_incident(
         raise
     except Exception as e:
         db.rollback()
-        print(f"Error acknowledging incident: {e}")
+        logger.error(f"Error acknowledging incident: {e}")
         raise HTTPException(
             status_code=500, 
             detail="Error acknowledging incident"
@@ -577,7 +576,7 @@ async def list_incidents(
             for incident in incidents
         ]
     except Exception as e:
-        print(f"Error fetching incidents: {e}")
+        logger.error(f"Error fetching incidents: {e}")
         raise HTTPException(status_code=500, detail="Error fetching incidents")
 
 @app.get("/incidents/{incident_id}")
@@ -618,7 +617,7 @@ async def get_incident(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching incident: {e}")
+        logger.error(f"Error fetching incident: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -743,7 +742,7 @@ async def list_archived_incidents(
             for incident in archived
         ]
     except Exception as e:
-        print(f"Error listing archived incidents: {e}")
+        logger.error(f"Error listing archived incidents: {e}")
         raise HTTPException(status_code=500, detail="Error listing archived incidents")
 
 @app.post("/incidents/{incident_id}/archive")
@@ -766,7 +765,7 @@ async def archive_incident(
         
         db.commit()
         
-        print(f"📦 Incident {incident_id} archived by {incident.archived_by}")
+        logger.info(f"📦 Incident {incident_id} archived by {incident.archived_by}")
         add_audit_log("Archive Incident", token["sub"], f"Incident ID: {incident_id}")
         
         return {"message": f"Incident archived by {incident.archived_by}"}
@@ -775,7 +774,7 @@ async def archive_incident(
         raise
     except Exception as e:
         db.rollback()
-        print(f"Error archiving incident: {e}")
+        logger.error(f"Error archiving incident: {e}")
         raise HTTPException(status_code=500, detail="Error archiving incident")
 
 @app.delete("/incidents/archived/{incident_id}")
@@ -796,7 +795,7 @@ async def delete_archived_incident(
         db.delete(incident)
         db.commit()
         
-        print(f"🗑️ Archived incident {incident_id} deleted by {token['sub']}")
+        logger.info(f"🗑️ Archived incident {incident_id} deleted by {token['sub']}")
         add_audit_log("Delete Archived Incident", token["sub"], f"Incident ID: {incident_id}")
         
         return {"message": f"Archived incident {incident_id} deleted successfully"}
@@ -805,7 +804,7 @@ async def delete_archived_incident(
         raise
     except Exception as e:
         db.rollback()
-        print(f"Error deleting archived incident: {e}")
+        logger.error(f"Error deleting archived incident: {e}")
         raise HTTPException(status_code=500, detail="Error deleting archived incident")
 
 @app.delete("/incidents/archived/")
@@ -823,14 +822,14 @@ async def delete_all_archived_incidents(
             
         db.commit()
         
-        print(f"🗑️ All archived incidents deleted by {token['sub']}")
+        logger.info(f"🗑️ All archived incidents deleted by {token['sub']}")
         add_audit_log("Delete All Archived Incidents", token["sub"], f"Deleted {deleted_count} incidents")
         
         return {"message": f"Successfully deleted {deleted_count} archived incidents"}
         
     except Exception as e:
         db.rollback()
-        print(f"Error deleting all archived incidents: {e}")
+        logger.error(f"Error deleting all archived incidents: {e}")
         raise HTTPException(status_code=500, detail="Error deleting all archived incidents")
 
 
@@ -879,7 +878,7 @@ async def get_contacts(db: Session = Depends(get_users_db), token = Depends(veri
             }
         }
     except Exception as e:
-        print(f"Error getting contacts: {str(e)}")
+        logger.error(f"Error getting contacts: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -907,7 +906,7 @@ async def create_contact(
         if not temp_password:
             raise ValueError("Failed to generate password")
             
-        hashed = bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode()
+        hashed = PasswordManager.hash_password(temp_password)
         
         user = User(
             username=contact.email,
@@ -1003,12 +1002,7 @@ async def get_users(admin_user: User = Depends(is_admin)):
     
 
 
-# Change pw
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(
-        plain_password.encode(), 
-        hashed_password.encode()
-    )
+
 
 @app.post("/api/change-password")
 async def change_password(
@@ -1023,11 +1017,11 @@ async def change_password(
             raise HTTPException(status_code=404, detail="User not found")
             
         # Verify old password
-        if not verify_password(request.old_password, user.password_hash):
+        if not PasswordManager.verify(request.old_password, user.password_hash):
             raise HTTPException(status_code=400, detail="Invalid old password")
             
         # Update password
-        user.password_hash = hash_password(request.new_password)
+        user.password_hash = PasswordManager.hash(request.new_password)
         db.commit()
         add_audit_log("Change Password by", user.username)
         return {"message": "Password updated successfully"}
@@ -1050,7 +1044,7 @@ async def admin_reset_password(
             raise HTTPException(status_code=404, detail="User not found")
             
         # Update password
-        user.password_hash = hash_password(request.new_password)
+        user.password_hash = PasswordManager.hash(request.new_password)
         db.commit()
         add_audit_log("Admin Password Reset", admin_user.username, f"Reset password for user {user.username}")
         return {"message": f"Password reset successful for user {user.username}"}
@@ -1213,8 +1207,6 @@ async def update_settings(settings: Dict, admin_user = Depends(is_admin)):
         if not isinstance(settings, dict):
             raise ValueError("Settings must be a dictionary")
             
-        # Debug print
-        print(f"Attempting to save settings: {settings}")
         
         save_config(settings)
         logger.info("Settings saved successfully")
