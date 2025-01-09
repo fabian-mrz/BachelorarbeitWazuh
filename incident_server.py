@@ -1372,7 +1372,7 @@ async def generate_certificate(cert_data: dict, admin_user: User = Depends(is_ad
 async def delete_all_csv(admin_user: User = Depends(is_admin)):
     """Delete all CSV files and their parent folders in incidents directory"""
     try:
-        incidents_dir = "incidents"
+        incidents_dir = "./static/incidents"
         deleted_folders = 0
         
         # Check if incidents directory exists
