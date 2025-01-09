@@ -214,7 +214,7 @@
                 <div id="cert_status" class="status-message"></div>
                 <p>Please also change the certificates for the wazuh dashobard according to the <a
                         href="https://documentation.wazuh.com/current/user-manual/wazuh-server-cluster.html#certificates-deployment">official
-                        documentation</a></p>
+                        documentation.</a></p>
             </div>
         </li>
         <li>
@@ -269,6 +269,9 @@
                 </div>
 
                 <h3>Telegram Settings</h3>
+                <p>For setting up a telegram-bot, please find one of many good turoials on <a
+                    href="https://www.google.com/search?q=how+to+set+up+telegram+bot">Google.</a></p>
+                
                 <div class="config-group">
                     <label>Chat ID:</label>
                     <input type="text" id="telegram_chat_id">
@@ -350,13 +353,31 @@
                     <ol>
                         <li>Connect to your Wazuh server via SSH:
                             <pre
-                                class="command-block">ssh wazuh-admin@<span class="placeholder">your-server-ip</span></pre>
+                                class="command-block">ssh wazuhserver@<span class="placeholder">wazuhserver</span></pre>
                         </li>
                         <li>Open terminal and enter the password change command:
                             <pre class="command-block">passwd</pre>
                         </li>
                         <li>Enter your current password when prompted</li>
                         <li>Enter and confirm your new password</li>
+                    </ol>
+                </div>
+            </div>
+        </li>
+        <li>
+            <h2>Change Wazuh Passwords</h2>
+            <p>Change the default passwords from wazuh.</p>
+            <div class="config-section">
+                <div class="info-panel">
+                    <h4>System Password Change Instructions:</h4>
+                    <ol>
+                        <li>Connect to your Wazuh server via SSH:
+                            <pre
+                                class="command-block">ssh wazuhserver@<span class="placeholder">wazuhserver</span></pre>
+                        </li>
+                        <li>The process is described in the <a
+                            href="https://documentation.wazuh.com/current/user-manual/user-administration/password-management.html">official
+                            documentation.</a></li>
                     </ol>
                 </div>
             </div>
@@ -398,7 +419,7 @@
         <li>
             <h2>Finish Setup</h2>
             <p>Please ensure all steps have been done and finally delete the setup user down below.</p>
-            <p>If all administrators have forgotten their password, you can use the script in /opt/wazuhapp/ called forgotpw.py.</p>
+            <p>If all administrators have forgotten their password, you can use the script in /opt/wazuh-custom/app called forgotpw.py.</p>
             <div class="config-section">
                 <table class="contact-table">
                     <thead>

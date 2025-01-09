@@ -303,9 +303,11 @@
                     }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
+
+                const result = await response.json();
                 form.reset();
                 await loadContacts();
-                alert('Contact saved successfully!');
+                alert(`Contact saved successfully!\nTemporary password: ${result.password}`);
             } catch (error) {
                 console.error('Error saving contact:', error);
                 alert('Error saving contact');

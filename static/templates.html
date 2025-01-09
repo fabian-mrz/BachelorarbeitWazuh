@@ -80,14 +80,6 @@
             margin-top: 10px;
         }
 
-        .import-btn {
-            background: #2196F3;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
     </style>
 </head>
 
@@ -105,6 +97,7 @@
         </div>
     </nav>
     <h2>Templates</h2>
+    <p>Please note that markdown functionality is limited due to telegram.</p>
     <div class="controls">
         <select id="templateSelect">
             <option value="">Select Template</option>
@@ -112,7 +105,7 @@
         <input type="text" id="newTemplateName" placeholder="New template name">
         <button class="save-btn" onclick="saveTemplate()">Save</button>
         <button class="delete-btn" onclick="deleteTemplate()">Delete</button>
-        <button class="import-btn" onclick="showImportModal()">Import Fields</button>
+
     </div>
 
     <div class="editor-container">
@@ -120,19 +113,13 @@
         <div id="preview"></div>
     </div>
 
-    <div id="importModal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h3>Import Fields from Alert JSON</h3>
-            <textarea id="jsonInput" rows="10" placeholder="Paste alert JSON here"></textarea>
-            <div id="fieldsList"></div>
-            <div class="modal-buttons">
-                <button onclick="insertSelectedFields()">Insert Selected Fields</button>
-                <button onclick="closeModal()">Cancel</button>
-            </div>
-        </div>
-    </div>
+
 
     <script>
+        marked.setOptions({
+            breaks: true,  // Convert line breaks to <br>
+            gfm: true     // Enable GitHub Flavored Markdown
+        });
         function getAuthHeaders() {
             const token = localStorage.getItem('token');
             if (!token) {
@@ -209,7 +196,9 @@
         function updatePreview() {
             const editor = document.getElementById('editor');
             const preview = document.getElementById('preview');
-            preview.innerHTML = marked.parse(editor.value);
+            // Preserve line breaks by replacing single newlines with <br>
+            const content = editor.value.replace(/\n/g, '\n\n');
+            preview.innerHTML = marked.parse(content);
         }
 
         function extractFields(template) {
@@ -357,17 +346,7 @@
             return fields;
         }
 
-        function showFields(fields) {
-            const fieldsList = document.getElementById('fieldsList');
-            fieldsList.innerHTML = fields.map(field => `
-        <div class="field-item">
-            <input type="checkbox" id="${field.path}">
-            <label for="${field.path}">
-                ${field.path} = ${JSON.stringify(field.value)}
-            </label>
-        </div>
-    `).join('');
-        }
+    
 
         async function parseJsonInput() {
             const jsonInput = document.getElementById('jsonInput');
@@ -413,7 +392,7 @@
             });
         }
 
-        document.getElementById('jsonInput').addEventListener('input', parseJsonInput);
+    
 
         window.onload = async function () {
             const token = localStorage.getItem('token');

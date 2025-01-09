@@ -11,6 +11,8 @@ import configparser
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from markdown import markdown
+from email.mime.text import MIMEText
 import smtplib
 from email.mime.application import MIMEApplication
 import telegram
@@ -54,6 +56,8 @@ CURRENT_LOG_FILE = os.path.join(LOGS_DIR, "current_audit.log")
 # Set output directory
 OUTPUT_DIR = Path('/var/ossec/integrations')
 
+config = configparser.ConfigParser()
+
 
 
 def reload_config():
@@ -62,7 +66,7 @@ def reload_config():
     global SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
     global SERVER_HOST, SERVER_PORT, SSL_KEYFILE, SSL_CERTFILE
     
-    config = configparser.ConfigParser()
+    
     config.read('config.ini')
     
     # Telegram config
@@ -295,15 +299,26 @@ async def send_notifications(incident_id: str, db: Session):
         logger.error(f"Error in notification process: {e}")
         db.rollback()
 
+
 #email notification
 async def send_email_notification(contact: dict, message: str, csv_path: str = None):
-    """Send email notification with optional CSV attachment"""
+    """Send email notification with markdown support and optional CSV attachment"""
     try:
-        msg = MIMEMultipart()
+        msg = MIMEMultipart('alternative')
         msg['From'] = SMTP_FROM
         msg['To'] = contact['email']
         msg['Subject'] = "Security Alert"
-        msg.attach(MIMEText(message, 'plain'))
+        
+        # Add double newlines to markdown for proper spacing
+        formatted_message = message.replace("\n", "\n\n")
+        
+        # Create plain text and HTML versions
+        text_part = MIMEText(formatted_message, 'plain')
+        html_part = MIMEText(markdown(formatted_message), 'html')
+        
+        # Add both parts to message
+        msg.attach(text_part)
+        msg.attach(html_part)
         
         # Attach CSV if available
         if csv_path and os.path.exists(csv_path):
@@ -317,7 +332,7 @@ async def send_email_notification(contact: dict, message: str, csv_path: str = N
         server.login(SMTP_USER, SMTP_PASS)
         server.send_message(msg)
         server.quit()
-        logger.info(f"✉️ Email sent to {contact['name']} ({contact['email']}) with attachment")
+        logger.info(f"✉️ Email sent to {contact['name']} ({contact['email']}) with HTML and attachment")
     except Exception as e:
         logger.error(f"Error sending email to {contact['email']}: {e}")
 
@@ -909,7 +924,7 @@ async def create_contact(
         if not temp_password:
             raise ValueError("Failed to generate password")
             
-        hashed = PasswordManager.hash_password(temp_password)
+        hashed = PasswordManager.hash(temp_password)
         
         user = User(
             username=contact.email,
@@ -925,17 +940,13 @@ async def create_contact(
         db.commit()
         db.refresh(user)
         
-        logger.info(f"Created new user: {user.email}")
         
         await send_email_notification(
             contact={"email": user.email, "name": user.name},
             message=f"Your temporary password is: {temp_password}"
         )
         
-        username = token.username if hasattr(token, 'username') else str(token)
-        add_audit_log("Contact", username,token["sub"],f"Created contact: {user.email})")
-        
-        return {"id": user.id, "message": "Contact created successfully", "password": temp_password}
+        return {"message": "Contact created successfully", "password": temp_password}
             
     except Exception as e:
         db.rollback()
