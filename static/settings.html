@@ -924,6 +924,17 @@
                 container.appendChild(pairDiv);
             }
 
+            fakeloadtemplate = async () => {
+                const response = await fetch('/list_templates');
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+            }
+
 
             window.onload = function () {
                 const token = localStorage.getItem('token');
@@ -931,6 +942,8 @@
                     window.location.href = '/login.html';
                     return;
                 }
+                //workarrond to href unauth user
+                fakeloadtemplate();
                 loadSettings();
                 loadUsers();
                 loadAuditLogs();

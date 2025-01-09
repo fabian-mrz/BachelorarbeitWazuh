@@ -149,10 +149,17 @@ class UserResponse(BaseModel):
 class PasswordResetRequest(BaseModel):
     new_password: str
 
+#Escalations
 class Phase(BaseModel):
     type: Literal["email", "phone"]
     contacts: List[EmailStr]
-    delay: conint(ge=0)  # Ensure non-negative delay
+    delay: int
+
+    @field_validator('delay')
+    def validate_delay(cls, v):
+        if v < 0:
+            raise ValueError("Delay must be non-negative")
+        return v
 
 class EscalationRule(BaseModel):
     phases: List[Phase]
@@ -161,6 +168,10 @@ class EscalationRule(BaseModel):
     def validate_phases(cls, phases):
         if not phases:
             raise ValueError("At least one phase required")
+        
+        # Check if any phase has contacts
+        if not any(len(phase.contacts) > 0 for phase in phases):
+            raise ValueError("At least one phase must have contacts")
         return phases
 
 class EscalationConfig(BaseModel):
@@ -173,6 +184,7 @@ class EscalationConfig(BaseModel):
             if not rule_id.isdigit():
                 raise ValueError(f"Rule ID must be numeric: {rule_id}")
         return rules
+
 
 
 #notification
@@ -837,12 +849,15 @@ async def get_escalations(token = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/api/escalations")
-async def save_escalations(escalations: dict, token = Depends(verify_token)):
+async def save_escalations(escalations: EscalationConfig, token = Depends(verify_token)):
     try:
         add_audit_log("Save Escalations", token["sub"])
         with open('escalations.json', 'w') as f:
-            json.dump(escalations, f, indent=4)
+            json.dump(escalations.model_dump(), f, indent=4)
         return {"message": "Escalations saved successfully"}
+    except ValueError as ve:
+        logger.error(f"Validation error: {str(ve)}")
+        raise HTTPException(status_code=422, detail=str(ve))
     except Exception as e:
         logger.error(f"Error saving escalations: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -1215,9 +1230,9 @@ async def update_settings(settings: Dict, admin_user = Depends(is_admin)):
 async def check_admin(admin_user = Depends(is_admin)):
     return {"is_admin": True}    
 
-#Templates
+
 @app.get('/list_templates')
-async def list_templates():
+async def list_templates(token = Depends(verify_token)):
     """List all available notification templates"""
     try:
         templates = []
@@ -1232,7 +1247,7 @@ async def list_templates():
         )
 
 @app.get("/templates/{template_name}")
-async def get_template(template_name: str):
+async def get_template(template_name: str, token = Depends(verify_token)):
     try:
         with open(f"{TEMPLATES_DIR}/{template_name}") as f:
             return json.load(f)

@@ -156,7 +156,13 @@
                     headers: getAuthHeaders()
                 });
 
-                if (!response.ok) throw new Error('Failed to load incidents');
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
 
                 const incidents = await response.json();
 

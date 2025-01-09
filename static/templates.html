@@ -138,6 +138,13 @@
 
         async function loadTemplates() {
             const response = await fetch('/list_templates');
+            if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
             const templates = await response.json();
             const select = document.getElementById('templateSelect');
             select.innerHTML = '<option value="">Select Template</option>';
@@ -314,7 +321,20 @@
             closeModal();
         }
 
-        loadTemplates();
+        window.onload = async function () {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+
+            try {
+                await loadTemplates();
+            } catch (error) {
+                showError(`Failed to load data: ${error.message}`);
+            }
+            setActiveNavLink();
+        };
         document.getElementById('jsonInput').addEventListener('input', parseJsonInput);
     </script>
 </body>
