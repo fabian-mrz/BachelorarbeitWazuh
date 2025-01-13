@@ -1040,7 +1040,7 @@ async def update_contact(contact_id: str, contact: dict, db: Session = Depends(g
 
 
 @app.get("/api/users", response_model=List[UserResponse])
-async def get_users(admin_user: User = Depends(is_admin)):
+async def get_users(token = Depends(verify_token)):
     try:
         db = next(get_users_db())
         users = db.query(User).all()

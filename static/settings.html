@@ -817,7 +817,8 @@
                     });
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
-                    }
+                        href = '/login.html';
+                    } 
                     const users = await response.json();
                     const table = document.getElementById('userTable');
                     table.innerHTML = `
